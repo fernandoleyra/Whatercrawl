@@ -131,7 +131,10 @@ async def scrape(req: ScrapeRequest, request: Request) -> ScrapeResponse:
 
     await semaphore.acquire()
     try:
-        result = await crawler.crawl_url(req.url)
+        result = await crawler.crawl_url(
+            req.url,
+            take_screenshot=(req.output_format == "markdown"),
+        )
 
         if result["error"]:
             raise HTTPException(

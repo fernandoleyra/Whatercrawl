@@ -174,12 +174,26 @@ class TestCrawlUrlTimeout:
         from playwright.async_api import TimeoutError as PlaywrightTimeoutError
         from src.crawler.engine import CrawlerEngine
 
-        async_pw_cm, mock_pw, mock_browser, mock_context = _make_playwright_stack(
-            goto_side_effect=PlaywrightTimeoutError("Navigation timed out"),
-        )
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock(side_effect=PlaywrightTimeoutError("Navigation timed out"))
+        mock_page.content = AsyncMock(return_value="<html></html>")
+        mock_page.screenshot = AsyncMock(return_value=b"PNG")
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.close = AsyncMock()
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_pw_instance = AsyncMock()
+        mock_pw_instance.start = AsyncMock(return_value=mock_playwright)
 
         with (
-            patch("src.crawler.engine.async_playwright", return_value=async_pw_cm),
+            patch("src.crawler.engine.async_playwright", return_value=mock_pw_instance),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
             engine = CrawlerEngine()
@@ -455,3 +469,41 @@ class TestRandomDelayInvalid:
 
         with pytest.raises(ValueError, match="min_s"):
             await random_delay(2.0, 1.0)
+
+
+class TestCrawlUrlNoScreenshotByDefault:
+    """Test 16 — crawl_url should not call page.screenshot() unless take_screenshot=True."""
+
+    async def test_crawl_url_no_screenshot_by_default(self):
+        from src.crawler.engine import CrawlerEngine
+
+        goto_response = _ok_response(200)
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock(return_value=goto_response)
+        mock_page.content = AsyncMock(return_value="<html>hello</html>")
+        mock_page.screenshot = AsyncMock(return_value=b"PNG")
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.close = AsyncMock()
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        # engine.py uses async_playwright().start(), not async with async_playwright()
+        mock_pw_instance = AsyncMock()
+        mock_pw_instance.start = AsyncMock(return_value=mock_playwright)
+
+        with (
+            patch("src.crawler.engine.async_playwright", return_value=mock_pw_instance),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            engine = CrawlerEngine()
+            result = await engine.crawl_url("https://example.com")  # take_screenshot defaults to False
+
+        mock_page.screenshot.assert_not_called()
+        assert result["screenshot_b64"] == ""

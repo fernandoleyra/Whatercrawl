@@ -145,6 +145,7 @@ class CrawlerEngine:
         url: str,
         timeout_ms: int = TIMEOUT_MS,
         robots_allowed: bool = True,
+        take_screenshot: bool = False,
     ) -> dict:
         """Crawl a single URL and return a structured result dict.
 
@@ -188,12 +189,14 @@ class CrawlerEngine:
                 return _err_result(url, status_code, f"HTTP {status_code}")
 
             html: str = await page.content()
-            screenshot_bytes: bytes = await page.screenshot(
-                full_page=True, type="png"
-            )
-            screenshot_b64: str = base64.standard_b64encode(screenshot_bytes).decode(
-                "utf-8"
-            )
+            screenshot_b64 = ""
+            if take_screenshot:
+                screenshot_bytes: bytes = await page.screenshot(
+                    full_page=True, type="png"
+                )
+                screenshot_b64 = base64.standard_b64encode(screenshot_bytes).decode(
+                    "utf-8"
+                )
 
             return _ok_result(url, html, screenshot_b64, status_code)
 
