@@ -10,11 +10,22 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 
 import anthropic
 import jsonschema
+import trafilatura
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_html(html: str) -> str:
+    """Extract readable text from HTML using trafilatura; fall back to raw HTML if empty."""
+    clean = trafilatura.extract(html, include_comments=False, include_tables=True)
+    if clean and len(clean.strip()) > 50:
+        return clean
+    # trafilatura returned nothing useful — strip tags with a naive fallback
+    return re.sub(r"<[^>]+>", " ", html)
 
 STRUCTURED_MODEL = "claude-sonnet-4-20250514"
 MAX_RETRIES = 2
@@ -47,23 +58,25 @@ class StructuredExtractor:
 
     @staticmethod
     def _build_initial_prompt(html: str, schema: dict) -> str:
+        clean = _clean_html(html)
         return (
             "You are a structured data extraction assistant.\n\n"
-            "Given the HTML content of a webpage and a JSON schema, extract the data matching "
+            "Given the text content of a webpage and a JSON schema, extract the data matching "
             "the schema fields and return ONLY a valid JSON object. No markdown, no explanation.\n\n"
             f"Schema:\n{json.dumps(schema, indent=2)}\n\n"
-            f"HTML:\n{html[:8000]}\n\n"
+            f"Page content:\n{clean}\n\n"
             f"Return a JSON object with exactly these fields: {list(schema.get('properties', schema).keys())}"
         )
 
     @staticmethod
     def _build_retry_prompt(html: str, schema: dict, validation_error_message: str) -> str:
+        clean = _clean_html(html)
         return (
             f"Your previous response failed JSON schema validation with this error:\n"
             f"{validation_error_message}\n\n"
             "Please try again. Return ONLY a valid JSON object matching this schema:\n"
             f"{json.dumps(schema, indent=2)}\n\n"
-            f"HTML:\n{html[:8000]}"
+            f"Page content:\n{clean}"
         )
 
     async def _call_claude(self, prompt: str) -> str:

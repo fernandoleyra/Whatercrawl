@@ -396,3 +396,37 @@ class TestLogSelectorChangeAppendsMultiple:
             assert "original_selector" in record
             assert "healed_selector" in record
             assert "url" in record
+
+
+# ===========================================================================
+# Test 13 — extract uses clean text, not raw html[:8000]
+# ===========================================================================
+
+
+class TestExtractUsesCleanTextNotRawHtml:
+    """Test 13 — StructuredExtractor must not truncate at 8000 chars of raw HTML."""
+
+    async def test_extract_uses_clean_text_not_raw_html(self):
+        """StructuredExtractor must not truncate at 8000 chars of raw HTML."""
+        # Build HTML that is >8000 chars; the important content is at position 9000
+        padding = "<p>" + "x" * 400 + "</p>\n"  # 404 chars per para
+        late_content = "<p>This is the price: $42.99</p>"
+        html = padding * 22 + late_content  # ~8900 chars of padding then the key data
+
+        mock_client = _make_mock_client('{"price": 42.99}')
+        extractor = _make_structured_extractor(mock_client)
+
+        schema = {"type": "object", "properties": {"price": {"type": "number"}}}
+        result = await extractor.extract(html, schema)
+
+        # Verify the call was made
+        assert mock_client.messages.create.called
+        prompt_sent = mock_client.messages.create.call_args[1]["messages"][0]["content"]
+        # The late content ($42.99) should appear in the prompt.
+        # With html[:8000] truncation, the late_content would be cut off entirely.
+        # With trafilatura clean text, the text from the late paragraph should be present.
+        assert "42.99" in prompt_sent, (
+            "Expected '42.99' in the prompt sent to Claude — "
+            "the extractor appears to be truncating content at 8000 chars "
+            "instead of using trafilatura to extract clean text."
+        )
