@@ -1,5 +1,5 @@
 """
-tests/test_sdk/test_client.py — Unit tests for sdk/webcrawl/client.py.
+tests/test_sdk/test_client.py — Unit tests for sdk/watercrawl/client.py.
 
 Uses unittest.mock to patch httpx.Client instance methods (post/get) so
 no live server is required.  All tests are synchronous (the SDK is sync).
@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock
 
-from sdk.webcrawl.client import WebcrawlClient, WebcrawlError
+from sdk.watercrawl.client import WatercrawlClient, WatercrawlError
 
 
 # ---------------------------------------------------------------------------
@@ -38,9 +38,9 @@ def make_mock_response(
 
 
 @pytest.fixture()
-def client() -> WebcrawlClient:
-    """Return a WebcrawlClient with a patched (no-op) httpx.Client."""
-    wc = WebcrawlClient("http://localhost:8000")
+def client() -> WatercrawlClient:
+    """Return a WatercrawlClient with a patched (no-op) httpx.Client."""
+    wc = WatercrawlClient("http://localhost:8000")
     # Replace the underlying httpx.Client with a plain MagicMock so no real
     # network calls are ever attempted.
     wc._client = MagicMock()
@@ -52,7 +52,7 @@ def client() -> WebcrawlClient:
 # ---------------------------------------------------------------------------
 
 
-def test_scrape_correct_http_method_and_url(client: WebcrawlClient) -> None:
+def test_scrape_correct_http_method_and_url(client: WatercrawlClient) -> None:
     """scrape() must POST to /scrape and return the 'content' field."""
     mock_resp = make_mock_response(
         200,
@@ -73,7 +73,7 @@ def test_scrape_correct_http_method_and_url(client: WebcrawlClient) -> None:
     assert result == "# Hello"
 
 
-def test_scrape_correct_request_body(client: WebcrawlClient) -> None:
+def test_scrape_correct_request_body(client: WatercrawlClient) -> None:
     """scrape() must pass url and output_format in the JSON body."""
     mock_resp = make_mock_response(
         200,
@@ -88,12 +88,12 @@ def test_scrape_correct_request_body(client: WebcrawlClient) -> None:
     assert call_kwargs["json"]["output_format"] == "text"
 
 
-def test_scrape_error_raises_webcrawl_error(client: WebcrawlClient) -> None:
-    """scrape() must raise WebcrawlError with the correct status_code on 502."""
+def test_scrape_error_raises_webcrawl_error(client: WatercrawlClient) -> None:
+    """scrape() must raise WatercrawlError with the correct status_code on 502."""
     mock_resp = make_mock_response(502, json_data={"detail": "crawl failed"})
     client._client.post.return_value = mock_resp
 
-    with pytest.raises(WebcrawlError) as exc_info:
+    with pytest.raises(WatercrawlError) as exc_info:
         client.scrape("http://example.com")
 
     assert exc_info.value.status_code == 502
@@ -104,7 +104,7 @@ def test_scrape_error_raises_webcrawl_error(client: WebcrawlClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_crawl_correct_request(client: WebcrawlClient) -> None:
+def test_crawl_correct_request(client: WatercrawlClient) -> None:
     """crawl() must POST to /crawl and return the job_id."""
     mock_resp = make_mock_response(
         200,
@@ -129,7 +129,7 @@ def test_crawl_correct_request(client: WebcrawlClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_crawl_status_correct_url(client: WebcrawlClient) -> None:
+def test_get_crawl_status_correct_url(client: WatercrawlClient) -> None:
     """get_crawl_status() must GET /crawl/<job_id> and return the full dict."""
     mock_resp = make_mock_response(
         200,
@@ -145,12 +145,12 @@ def test_get_crawl_status_correct_url(client: WebcrawlClient) -> None:
     assert result["status"] == "done"
 
 
-def test_get_crawl_status_404_raises_webcrawl_error(client: WebcrawlClient) -> None:
-    """get_crawl_status() must raise WebcrawlError with status_code 404."""
+def test_get_crawl_status_404_raises_webcrawl_error(client: WatercrawlClient) -> None:
+    """get_crawl_status() must raise WatercrawlError with status_code 404."""
     mock_resp = make_mock_response(404, json_data={"detail": "not found"})
     client._client.get.return_value = mock_resp
 
-    with pytest.raises(WebcrawlError) as exc_info:
+    with pytest.raises(WatercrawlError) as exc_info:
         client.get_crawl_status("abc-123")
 
     assert exc_info.value.status_code == 404
@@ -161,7 +161,7 @@ def test_get_crawl_status_404_raises_webcrawl_error(client: WebcrawlClient) -> N
 # ---------------------------------------------------------------------------
 
 
-def test_extract_correct_request(client: WebcrawlClient) -> None:
+def test_extract_correct_request(client: WatercrawlClient) -> None:
     """extract() must POST to /extract and return the 'data' field."""
     mock_resp = make_mock_response(
         200,
@@ -186,14 +186,14 @@ def test_extract_correct_request(client: WebcrawlClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_error_response_raises_webcrawl_error_non_json(client: WebcrawlClient) -> None:
-    """WebcrawlError must be raised even when the error body is not JSON."""
+def test_error_response_raises_webcrawl_error_non_json(client: WatercrawlClient) -> None:
+    """WatercrawlError must be raised even when the error body is not JSON."""
     mock_resp = make_mock_response(500, text="Internal Server Error")
     # json() raises an exception to simulate a non-JSON body
     mock_resp.json.side_effect = ValueError("No JSON")
     client._client.post.return_value = mock_resp
 
-    with pytest.raises(WebcrawlError) as exc_info:
+    with pytest.raises(WatercrawlError) as exc_info:
         client.scrape("http://example.com")
 
     assert exc_info.value.status_code == 500
@@ -206,8 +206,8 @@ def test_error_response_raises_webcrawl_error_non_json(client: WebcrawlClient) -
 
 
 def test_context_manager() -> None:
-    """WebcrawlClient must work as a context manager without raising."""
-    with WebcrawlClient() as wc:
+    """WatercrawlClient must work as a context manager without raising."""
+    with WatercrawlClient() as wc:
         # Replace underlying transport so close() doesn't fail on teardown
         wc._client = MagicMock()
-        assert isinstance(wc, WebcrawlClient)
+        assert isinstance(wc, WatercrawlClient)

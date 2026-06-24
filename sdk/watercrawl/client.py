@@ -1,5 +1,5 @@
 """
-sdk/webcrawl/client.py — Sync Python SDK for the Webcrawl API.
+sdk/watercrawl/client.py — Sync Python SDK for the Watercrawl API.
 
 Uses httpx.Client (sync) per the decisions.md requirement to support both
 sync and async usage patterns without forcing asyncio on callers.
@@ -12,17 +12,17 @@ from typing import Any
 import httpx
 
 
-class WebcrawlError(Exception):
-    """Raised when the Webcrawl API returns a non-2xx response."""
+class WatercrawlError(Exception):
+    """Raised when the Watercrawl API returns a non-2xx response."""
 
     def __init__(self, message: str, status_code: int | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
 
 
-class WebcrawlClient:
+class WatercrawlClient:
     """
-    Synchronous client for the Webcrawl API.
+    Synchronous client for the Watercrawl API.
 
     Args:
         base_url: Base URL of the running API server.
@@ -30,12 +30,12 @@ class WebcrawlClient:
 
     Usage::
 
-        client = WebcrawlClient("http://localhost:8000")
+        client = WatercrawlClient("http://localhost:8000")
         content = client.scrape("https://example.com")
         client.close()
 
         # or as a context manager:
-        with WebcrawlClient() as client:
+        with WatercrawlClient() as client:
             content = client.scrape("https://example.com")
     """
 
@@ -67,7 +67,7 @@ class WebcrawlClient:
             The scraped content as a string.
 
         Raises:
-            WebcrawlError: On any non-2xx API response.
+            WatercrawlError: On any non-2xx API response.
         """
         payload: dict[str, Any] = {"url": url, "output_format": output_format}
         response = self._client.post("/scrape", json=payload)
@@ -87,7 +87,7 @@ class WebcrawlClient:
             The job_id string to use with get_crawl_status().
 
         Raises:
-            WebcrawlError: On any non-2xx API response.
+            WatercrawlError: On any non-2xx API response.
         """
         payload: dict[str, Any] = {
             "url": url,
@@ -109,7 +109,7 @@ class WebcrawlClient:
             A dict with keys: job_id, status, pages.
 
         Raises:
-            WebcrawlError: On any non-2xx API response (including 404).
+            WatercrawlError: On any non-2xx API response (including 404).
         """
         response = self._client.get(f"/crawl/{job_id}")
         self._raise_for_status(response)
@@ -127,7 +127,7 @@ class WebcrawlClient:
             The extracted data dict.
 
         Raises:
-            WebcrawlError: On any non-2xx API response.
+            WatercrawlError: On any non-2xx API response.
         """
         payload: dict[str, Any] = {"url": url, "schema": schema}
         response = self._client.post("/extract", json=payload)
@@ -139,7 +139,7 @@ class WebcrawlClient:
     # ------------------------------------------------------------------
 
     def _raise_for_status(self, response: httpx.Response) -> None:
-        """Raise WebcrawlError if the response status code is >= 400."""
+        """Raise WatercrawlError if the response status code is >= 400."""
         if response.status_code < 400:
             return
 
@@ -149,7 +149,7 @@ class WebcrawlClient:
         except Exception:  # noqa: BLE001 — response body may not be JSON; fall back to raw text
             detail = response.text
 
-        raise WebcrawlError(f"API error {status}: {detail}", status_code=status)
+        raise WatercrawlError(f"API error {status}: {detail}", status_code=status)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -159,7 +159,7 @@ class WebcrawlClient:
         """Close the underlying httpx.Client and release connections."""
         self._client.close()
 
-    def __enter__(self) -> "WebcrawlClient":
+    def __enter__(self) -> "WatercrawlClient":
         return self
 
     def __exit__(
