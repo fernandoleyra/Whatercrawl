@@ -1,8 +1,8 @@
-# Webcrawl
+# Watercrawl
 
-## 1. What Webcrawl Is
+## 1. What Watercrawl Is
 
-Webcrawl is a production-grade web scraping API that converts any URL or entire website into clean, LLM-ready Markdown or structured JSON. It is a drop-in replacement for Firecrawl with better extraction quality via a vision-based fallback, self-healing CSS selectors, and lower cost when self-hosted. Runs fully locally with one Docker command — no external queue, no cloud dependency required.
+Watercrawl is a production-grade web scraping API that converts any URL or entire website into clean, LLM-ready Markdown or structured JSON. It is a drop-in replacement for Firecrawl with better extraction quality via a vision-based fallback, self-healing CSS selectors, and lower cost when self-hosted. Runs fully locally with one Docker command — no external queue, no cloud dependency required.
 
 ---
 
@@ -12,7 +12,7 @@ Webcrawl is a production-grade web scraping API that converts any URL or entire 
 
 ```bash
 git clone <repo>
-cd firecrawl-clone
+cd watercrawl
 cp .env.example .env
 # Edit .env and set ANTHROPIC_API_KEY
 docker-compose up
@@ -179,9 +179,9 @@ pip install -e sdk/
 **Usage**
 
 ```python
-from webcrawl import WebcrawlClient
+from watercrawl import WatercrawlClient
 
-client = WebcrawlClient(base_url="http://localhost:8000")
+client = WatercrawlClient(base_url="http://localhost:8000")
 
 # Scrape a URL — returns the content string
 markdown = client.scrape("https://news.ycombinator.com")
@@ -206,21 +206,21 @@ data = client.extract("https://example.com/product", schema={
 The client can also be used as a context manager to ensure the underlying HTTP connection is closed cleanly:
 
 ```python
-with WebcrawlClient(base_url="http://localhost:8000") as client:
+with WatercrawlClient(base_url="http://localhost:8000") as client:
     markdown = client.scrape("https://example.com")
 ```
 
 **Error handling**
 
-All methods raise `webcrawl.WebcrawlError` on non-2xx API responses. The exception carries a `status_code` attribute.
+All methods raise `watercrawl.WatercrawlError` on non-2xx API responses. The exception carries a `status_code` attribute.
 
 ```python
-from webcrawl import WebcrawlClient, WebcrawlError
+from watercrawl import WatercrawlClient, WatercrawlError
 
-with WebcrawlClient() as client:
+with WatercrawlClient() as client:
     try:
         data = client.extract("https://example.com", schema={"title": "string"})
-    except WebcrawlError as exc:
+    except WatercrawlError as exc:
         print(f"Request failed with HTTP {exc.status_code}: {exc}")
 ```
 
@@ -242,7 +242,7 @@ Copy `.env.example` to `.env` and edit the values before starting the server.
 | `ANTHROPIC_API_KEY` | **Required.** Anthropic API key used for Claude Vision extraction and CSS selector self-healing | *(none)* |
 | `HOST` | Host address the server binds to | `0.0.0.0` |
 | `PORT` | Port the server listens on | `8000` |
-| `WEBCRAWL_DB_PATH` | Path to the SQLite database file for async crawl job state | `./data/webcrawl.db` |
+| `WATERCRAWL_DB_PATH` | Path to the SQLite database file for async crawl job state | `./data/watercrawl.db` |
 | `MAX_CONCURRENT_CRAWLS` | Maximum number of crawl jobs that may run simultaneously | `5` |
 | `DEFAULT_TIMEOUT` | Per-page request timeout in seconds | `30` |
 | `DEFAULT_MAX_PAGES` | Default upper limit on pages per crawl job | `100` |

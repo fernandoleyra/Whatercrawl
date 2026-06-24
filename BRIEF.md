@@ -1,8 +1,8 @@
-# Project Brief: Webcrawl — Firecrawl Clone (Better)
+# Project Brief: Watercrawl
 
 ## What to build
 
-A production-grade **web scraping API** called **Webcrawl** that converts any URL
+A production-grade **web scraping API** called **Watercrawl** that converts any URL
 or entire website into clean, LLM-ready Markdown or structured JSON.
 
 Target: be a drop-in replacement for Firecrawl with better extraction quality,
@@ -64,11 +64,11 @@ Four endpoints, that's it:
 - `GET /crawl/{job_id}` returns progress + results so far
 
 ### 7. Python SDK
-- `pip install webcrawl`
+- `pip install watercrawl`
 - Mirrors Firecrawl SDK interface for easy migration:
   ```python
-  from webcrawl import WebcrawlApp
-  app = WebcrawlApp(api_url="http://localhost:8000")
+  from watercrawl import WatercrawlApp
+  app = WatercrawlApp(api_url="http://localhost:8000")
   result = app.scrape_url("https://news.ycombinator.com")
   print(result.markdown)
   ```
@@ -126,7 +126,7 @@ src/
 ANTHROPIC_API_KEY=        # required — extraction and vision fallback
 HOST=0.0.0.0
 PORT=8000
-DB_PATH=./data/webcrawl.db
+DB_PATH=./data/watercrawl.db
 MAX_CONCURRENT_CRAWLS=5
 DEFAULT_TIMEOUT=30
 DEFAULT_MAX_PAGES=100

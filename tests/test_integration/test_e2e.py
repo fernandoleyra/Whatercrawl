@@ -1,6 +1,6 @@
 """
 tests/test_integration/test_e2e.py — End-to-end integration tests for the
-full Webcrawl API flow.
+full Watercrawl API flow.
 
 Strategy: start the FastAPI app in-process using httpx.AsyncClient backed by
 ASGITransport.  All external calls (Playwright via CrawlerEngine, SQLite via
