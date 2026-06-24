@@ -8,6 +8,7 @@ across all pages of a site while respecting depth, page, and domain limits.
 from __future__ import annotations
 
 import asyncio
+import logging
 import urllib.robotparser
 from urllib.parse import urlparse
 
@@ -15,6 +16,8 @@ import httpx
 
 from src.crawler.engine import CrawlerEngine, MAX_PAGES, MAX_DEPTH
 from src.crawler.utils import _extract_links
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Private helpers
@@ -138,6 +141,8 @@ async def crawl_site(
                 return
 
             links = _extract_links(result["html"], current_url)
+            # Safe: asyncio cooperative scheduling guarantees no context switch
+            # between the `in visited` check and `visited.add` (no await between them).
             for link in links:
                 if link in visited:
                     continue
@@ -173,6 +178,9 @@ async def crawl_site(
             break
 
     if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+        for outcome in outcomes:
+            if isinstance(outcome, Exception) and not isinstance(outcome, asyncio.CancelledError):
+                logger.warning("Task raised unhandled exception during crawl cleanup: %s", outcome)
 
     return results[:max_pages]
