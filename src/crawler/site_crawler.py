@@ -8,7 +8,6 @@ across all pages of a site while respecting depth, page, and domain limits.
 from __future__ import annotations
 
 import asyncio
-import asyncio as _asyncio
 from urllib.parse import urlparse
 
 from src.crawler.engine import CrawlerEngine, MAX_PAGES, MAX_DEPTH
@@ -34,7 +33,7 @@ async def _crawl_with_retry(engine: "CrawlerEngine", url: str, max_attempts: int
     result = await engine.crawl_url(url)
     if not _is_retryable(result):
         return result
-    await _asyncio.sleep(1.0)
+    await asyncio.sleep(1.0)
     return await engine.crawl_url(url)
 
 
