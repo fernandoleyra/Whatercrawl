@@ -8,7 +8,10 @@ across all pages of a site while respecting depth, page, and domain limits.
 from __future__ import annotations
 
 import asyncio
+import urllib.robotparser
 from urllib.parse import urlparse
+
+import httpx
 
 from src.crawler.engine import CrawlerEngine, MAX_PAGES, MAX_DEPTH
 from src.crawler.utils import _extract_links
@@ -35,6 +38,34 @@ async def _crawl_with_retry(engine: "CrawlerEngine", url: str, max_attempts: int
         return result
     await asyncio.sleep(1.0)
     return await engine.crawl_url(url)
+
+
+def _base_url(url: str) -> str:
+    """Extract scheme://netloc from a URL."""
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _permissive_parser() -> urllib.robotparser.RobotFileParser:
+    """Return a RobotFileParser that allows everything."""
+    rp = urllib.robotparser.RobotFileParser()
+    rp.parse(["User-agent: *", "Allow: /"])
+    return rp
+
+
+async def _fetch_robots(base_url: str) -> urllib.robotparser.RobotFileParser:
+    """Fetch and parse robots.txt for a base URL. Returns a permissive parser on failure."""
+    robots_url = base_url.rstrip("/") + "/robots.txt"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(robots_url)
+            if resp.status_code == 200:
+                rp = urllib.robotparser.RobotFileParser()
+                rp.parse(resp.text.splitlines())
+                return rp
+    except Exception:  # noqa: BLE001
+        pass  # be permissive if robots.txt is unreachable
+    return _permissive_parser()
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +109,14 @@ async def crawl_site(
 
     exclude: list[str] = exclude_patterns or []
 
+    robot_parsers: dict[str, urllib.robotparser.RobotFileParser] = {}
+
+    async def _is_allowed(target_url: str) -> bool:
+        domain = _base_url(target_url)
+        if domain not in robot_parsers:
+            robot_parsers[domain] = await _fetch_robots(domain)
+        return robot_parsers[domain].can_fetch("*", target_url)
+
     visited: set[str] = set()
     results: list[dict] = []
 
@@ -92,6 +131,9 @@ async def crawl_site(
             continue
         visited.add(current_url)
 
+        if not await _is_allowed(current_url):
+            results.append({"url": current_url, "html": "", "screenshot_b64": "", "status_code": 0, "error": "Blocked by robots.txt"})
+            continue
         result = await _crawl_with_retry(engine, current_url)
         results.append(result)
 

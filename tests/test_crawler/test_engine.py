@@ -228,6 +228,33 @@ class TestCrawlUrlAlwaysClosesContext:
         assert result["error"] is not None
 
 
+class TestCrawlSiteRespectsRobotsTxt:
+    """Test: crawl_site should block URLs disallowed by robots.txt."""
+
+    async def test_crawl_site_respects_robots_txt(self, mock_engine):
+        """crawl_site should block URLs disallowed by robots.txt."""
+        robots_body = "User-agent: *\nDisallow: /private/\n"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = robots_body
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("src.crawler.site_crawler.httpx.AsyncClient", return_value=mock_client):
+            results = await crawl_site(
+                mock_engine, "https://example.com/private/secret", max_pages=1, max_depth=0
+            )
+
+        assert len(results) == 1
+        assert results[0]["error"] is not None
+        assert "robots" in results[0]["error"].lower()
+        mock_engine.crawl_url.assert_not_called()
+
+
 class TestCrawlSiteRespectsMaxPages:
     """Test 6 — crawl_site stops after max_pages regardless of available links."""
 
