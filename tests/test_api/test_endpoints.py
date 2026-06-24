@@ -66,7 +66,7 @@ def _make_mock_job_store() -> MagicMock:
 def _make_mock_structured_extractor() -> MagicMock:
     """Return a mock StructuredExtractor instance with async extract."""
     mock = MagicMock()
-    mock.extract = AsyncMock(return_value={"_note": "structured extraction available in M5"})
+    mock.extract = AsyncMock(return_value={"title": "Mock Result"})
     return mock
 
 
@@ -75,7 +75,18 @@ def _make_mock_structured_extractor() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 @pytest_asyncio.fixture
-async def client():
+async def mock_structured_extractor():
+    """
+    Yield the mock StructuredExtractor instance for direct configuration in tests.
+
+    Similar to how other mocks are made available, this allows tests to configure
+    the mock behavior without coupling to app.state internals.
+    """
+    yield _make_mock_structured_extractor()
+
+
+@pytest_asyncio.fixture
+async def client(mock_structured_extractor):
     """
     Build an AsyncClient backed by the FastAPI app under test.
 
@@ -86,7 +97,6 @@ async def client():
     mock_crawler = _make_mock_crawler()
     mock_extractor = _make_mock_extractor()
     mock_job_store = _make_mock_job_store()
-    mock_structured_extractor = _make_mock_structured_extractor()
 
     mock_crawler_cls = MagicMock(return_value=mock_crawler)
     mock_extractor_cls = MagicMock(return_value=mock_extractor)
@@ -223,11 +233,9 @@ async def test_docs_endpoint_accessible(client: AsyncClient) -> None:
     assert response.status_code == 200
 
 
-async def test_extract_returns_real_data(client: AsyncClient) -> None:
+async def test_extract_returns_real_data(client: AsyncClient, mock_structured_extractor: MagicMock) -> None:
     """POST /extract should call StructuredExtractor, not return a stub."""
-    from src.api.app import app  # noqa: PLC0415
-
-    app.state.structured_extractor.extract.return_value = {"title": "Test Page", "price": 9.99}
+    mock_structured_extractor.extract.return_value = {"title": "Test Page", "price": 9.99}
 
     response = await client.post("/extract", json={
         "url": "https://example.com/product",
