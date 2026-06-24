@@ -233,6 +233,25 @@ async def test_docs_endpoint_accessible(client: AsyncClient) -> None:
     assert response.status_code == 200
 
 
+async def test_crawl_job_pages_contain_markdown(client: AsyncClient) -> None:
+    """GET /crawl/{job_id} pages should have Markdown content, not raw HTML."""
+    from src.api.app import app  # noqa: PLC0415
+
+    app.state.job_store.get_job = AsyncMock(
+        return_value={
+            "status": "done",
+            "result": [{"url": "https://example.com", "content": "# Heading\n\nBody text.", "error": None}],
+        }
+    )
+
+    response = await client.get("/crawl/test-job-123")
+    assert response.status_code == 200
+    pages = response.json()["pages"]
+    assert len(pages) == 1
+    assert pages[0]["content"].startswith("#") or len(pages[0]["content"]) > 0
+    assert "<html" not in pages[0]["content"]
+
+
 async def test_extract_returns_real_data(client: AsyncClient, mock_structured_extractor: MagicMock) -> None:
     """POST /extract should call StructuredExtractor, not return a stub."""
     mock_structured_extractor.extract.return_value = {"title": "Test Page", "price": 9.99}
