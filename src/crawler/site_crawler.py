@@ -8,10 +8,35 @@ across all pages of a site while respecting depth, page, and domain limits.
 from __future__ import annotations
 
 import asyncio
+import asyncio as _asyncio
 from urllib.parse import urlparse
 
 from src.crawler.engine import CrawlerEngine, MAX_PAGES, MAX_DEPTH
 from src.crawler.utils import _extract_links
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_retryable(result: dict) -> bool:
+    """Return True if the error is transient and worth retrying."""
+    if result["error"] is None:
+        return False
+    # HTTP 4xx means the page doesn't exist — don't retry
+    if result["status_code"] and 400 <= result["status_code"] < 500:
+        return False
+    return True
+
+
+async def _crawl_with_retry(engine: "CrawlerEngine", url: str, max_attempts: int = 2) -> dict:
+    """Attempt to crawl url up to max_attempts times; return last result on all failures."""
+    result = await engine.crawl_url(url)
+    if not _is_retryable(result):
+        return result
+    await _asyncio.sleep(1.0)
+    return await engine.crawl_url(url)
+
 
 # ---------------------------------------------------------------------------
 # Public function
@@ -68,7 +93,7 @@ async def crawl_site(
             continue
         visited.add(current_url)
 
-        result = await engine.crawl_url(current_url)
+        result = await _crawl_with_retry(engine, current_url)
         results.append(result)
 
         if depth >= max_depth or result["error"] is not None:

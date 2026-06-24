@@ -6,6 +6,7 @@ without needing an explicit @pytest.mark.asyncio decorator.
 """
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 
 # ---------------------------------------------------------------------------
@@ -20,3 +21,15 @@ def pytest_configure(config):
         "markers",
         "asyncio: mark test as an asyncio coroutine",
     )
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_engine():
+    """A minimal CrawlerEngine stand-in with crawl_url as an AsyncMock."""
+    engine = MagicMock()
+    engine.crawl_url = AsyncMock()
+    return engine

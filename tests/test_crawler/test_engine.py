@@ -507,3 +507,27 @@ class TestCrawlUrlNoScreenshotByDefault:
 
         mock_page.screenshot.assert_not_called()
         assert result["screenshot_b64"] == ""
+
+
+# ===========================================================================
+# site_crawler.py retry tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_crawl_site_retries_on_transient_failure(mock_engine):
+    """crawl_site should retry a URL once on transient error (not 4xx)."""
+    call_count = 0
+
+    async def flaky_crawl(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return {"url": url, "html": "", "screenshot_b64": "", "status_code": 0, "error": "connection reset"}
+        return {"url": url, "html": "<html><body>OK</body></html>", "screenshot_b64": "", "status_code": 200, "error": None}
+
+    mock_engine.crawl_url.side_effect = flaky_crawl
+
+    results = await crawl_site(mock_engine, "https://example.com", max_pages=1, max_depth=0)
+    assert call_count == 2
+    assert results[0]["error"] is None
