@@ -31,6 +31,7 @@ from src.api.models import (
 from src.crawler.engine import CrawlerEngine
 from src.crawler.site_crawler import crawl_site
 from src.extractor.extractor import ContentExtractor
+from src.extractor.structured import StructuredExtractor
 from src.queue.job_store import JobStore
 
 logger = logging.getLogger(__name__)
@@ -80,11 +81,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     job_store = JobStore()
     await job_store.init()
     extractor = ContentExtractor()
+    structured_extractor = StructuredExtractor()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
     app.state.crawler = crawler
     app.state.job_store = job_store
     app.state.extractor = extractor
+    app.state.structured_extractor = structured_extractor
     app.state.semaphore = semaphore
 
     logger.info("FastAPI app started (MAX_CONCURRENT_CRAWLS=%d).", MAX_CONCURRENT)
@@ -202,10 +205,22 @@ async def get_crawl_status(job_id: str, request: Request) -> CrawlStatusResponse
 
 @app.post("/extract", response_model=ExtractResponse)
 async def extract(req: ExtractRequest, request: Request) -> ExtractResponse:
-    """Placeholder structured-extraction endpoint (full implementation in M5)."""
-    # Structured extraction via structured.py is deferred to Milestone 5.
-    # For now we acknowledge the request and return a note.
-    return ExtractResponse(
-        url=req.url,
-        data={"_note": "structured extraction available in M5"},
-    )
+    """Scrape a URL and extract structured data matching the provided JSON schema."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    structured_extractor: StructuredExtractor = request.app.state.structured_extractor
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(req.url)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+
+        data = await structured_extractor.extract(result["html"], req.schema)
+        return ExtractResponse(url=req.url, data=data)
+    except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        semaphore.release()

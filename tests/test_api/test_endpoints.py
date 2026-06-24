@@ -14,6 +14,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 # Ensure ANTHROPIC_API_KEY is set before the app module is imported/used
@@ -62,38 +63,50 @@ def _make_mock_job_store() -> MagicMock:
     return mock
 
 
+def _make_mock_structured_extractor() -> MagicMock:
+    """Return a mock StructuredExtractor instance with async extract."""
+    mock = MagicMock()
+    mock.extract = AsyncMock(return_value={"_note": "structured extraction available in M5"})
+    return mock
+
+
 # ---------------------------------------------------------------------------
 # Fixture: async HTTP client with all external deps mocked
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
     """
     Build an AsyncClient backed by the FastAPI app under test.
 
-    All three external class constructors are patched at the module level so
+    All four external class constructors are patched at the module level so
     the lifespan never opens a real browser, SQLite connection, or Anthropic
     session.
     """
     mock_crawler = _make_mock_crawler()
     mock_extractor = _make_mock_extractor()
     mock_job_store = _make_mock_job_store()
+    mock_structured_extractor = _make_mock_structured_extractor()
 
     mock_crawler_cls = MagicMock(return_value=mock_crawler)
     mock_extractor_cls = MagicMock(return_value=mock_extractor)
     mock_job_store_cls = MagicMock(return_value=mock_job_store)
+    mock_structured_extractor_cls = MagicMock(return_value=mock_structured_extractor)
 
     with (
         patch("src.api.app.CrawlerEngine", mock_crawler_cls),
         patch("src.api.app.JobStore", mock_job_store_cls),
         patch("src.api.app.ContentExtractor", mock_extractor_cls),
+        patch("src.api.app.StructuredExtractor", mock_structured_extractor_cls),
     ):
         from src.api.app import app  # noqa: PLC0415
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
-            yield c
+        # ASGITransport does not send lifespan events — trigger the lifespan manually.
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                yield c
 
 
 # ---------------------------------------------------------------------------
@@ -208,3 +221,25 @@ async def test_docs_endpoint_accessible(client: AsyncClient) -> None:
     response = await client.get("/docs")
 
     assert response.status_code == 200
+
+
+async def test_extract_returns_real_data(client: AsyncClient) -> None:
+    """POST /extract should call StructuredExtractor, not return a stub."""
+    from src.api.app import app  # noqa: PLC0415
+
+    app.state.structured_extractor.extract.return_value = {"title": "Test Page", "price": 9.99}
+
+    response = await client.post("/extract", json={
+        "url": "https://example.com/product",
+        "schema": {
+            "type": "object",
+            "properties": {"title": {"type": "string"}, "price": {"type": "number"}},
+            "required": ["title", "price"]
+        }
+    })
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["data"]["title"] == "Test Page"
+    assert data["data"]["price"] == 9.99
+    assert "_note" not in data["data"]
