@@ -58,16 +58,23 @@ async def _run_crawl_job(state, job_id: str, req: CrawlRequest) -> None:
                 req.url,
                 max_pages=req.max_pages,
                 max_depth=req.max_depth,
+                take_screenshot=True,
             )
         pages = []
         for r in results:
             if r["error"]:
                 pages.append({"url": r["url"], "content": "", "error": r["error"]})
             else:
-                content = await state.extractor.extract_with_fallback(
-                    r["html"], r["screenshot_b64"]
-                )
-                pages.append({"url": r["url"], "content": content, "error": None})
+                try:
+                    content = await state.extractor.extract_with_fallback(
+                        r["html"], r["screenshot_b64"]
+                    )
+                    pages.append({"url": r["url"], "content": content, "error": None})
+                except Exception as page_exc:  # noqa: BLE001
+                    logger.warning(
+                        "Extraction failed for %s: %s", r["url"], page_exc
+                    )
+                    pages.append({"url": r["url"], "content": "", "error": str(page_exc)})
         await state.job_store.update_job(job_id, status="done", result=pages)
     except Exception as exc:  # noqa: BLE001
         logger.error("Crawl job %s failed: %s", job_id, exc)

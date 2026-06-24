@@ -37,7 +37,10 @@ def _make_playwright_stack(
 ) -> tuple[MagicMock, MagicMock, MagicMock, MagicMock]:
     """Build a minimal fake Playwright object hierarchy.
 
-    Returns (mock_async_playwright_cm, mock_playwright, mock_browser, mock_context).
+    Returns (mock_pw_instance, mock_playwright, mock_browser, mock_context).
+
+    engine.py uses ``await async_playwright().start()`` — so mock_pw_instance
+    exposes a ``.start()`` coroutine that returns mock_playwright directly.
 
     The caller can further configure mock_page via mock_context.new_page.return_value.
     """
@@ -61,12 +64,11 @@ def _make_playwright_stack(
     mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
     mock_playwright.stop = AsyncMock()
 
-    # async_playwright() returns an async context manager
-    mock_async_playwright_cm = AsyncMock()
-    mock_async_playwright_cm.__aenter__ = AsyncMock(return_value=mock_playwright)
-    mock_async_playwright_cm.__aexit__ = AsyncMock(return_value=False)
+    # engine.py calls: pw = await async_playwright().start()
+    mock_pw_instance = AsyncMock()
+    mock_pw_instance.start = AsyncMock(return_value=mock_playwright)
 
-    return mock_async_playwright_cm, mock_playwright, mock_browser, mock_context
+    return mock_pw_instance, mock_playwright, mock_browser, mock_context
 
 
 def _ok_response(status: int = 200) -> MagicMock:
@@ -109,7 +111,7 @@ class TestCrawlUrlSuccess:
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
             engine = CrawlerEngine()
-            result = await engine.crawl_url("http://example.com/")
+            result = await engine.crawl_url("http://example.com/", take_screenshot=True)
 
         assert result["status_code"] == 200
         assert "hello" in result["html"]
@@ -586,3 +588,44 @@ async def test_crawl_site_retries_on_transient_failure(mock_engine):
     results = await crawl_site(mock_engine, "https://example.com", max_pages=1, max_depth=0)
     assert call_count == 2
     assert results[0]["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_crawl_site_passes_take_screenshot(mock_engine):
+    """C2 regression: crawl_site(take_screenshot=True) forwards take_screenshot to engine.crawl_url."""
+    captured_kwargs: list[dict] = []
+
+    async def record_crawl(url, **kwargs):
+        captured_kwargs.append(kwargs)
+        return {
+            "url": url,
+            "html": "<html><body>JS only</body></html>",
+            "screenshot_b64": "abc123",
+            "status_code": 200,
+            "error": None,
+        }
+
+    mock_engine.crawl_url.side_effect = record_crawl
+
+    await crawl_site(mock_engine, "https://example.com", max_pages=1, max_depth=0, take_screenshot=True)
+
+    assert len(captured_kwargs) >= 1
+    assert captured_kwargs[0].get("take_screenshot") is True, (
+        "crawl_site must forward take_screenshot=True to engine.crawl_url"
+    )
+
+
+@pytest.mark.asyncio
+async def test_crawl_site_max_pages_one(mock_engine):
+    """I2 regression: max_pages=1 must crawl exactly the seed URL and return 1 result."""
+    seed_html = '<html><a href="/page2">p2</a><a href="/page3">p3</a></html>'
+
+    async def fake_crawl(url, **kwargs):
+        return {"url": url, "html": seed_html, "screenshot_b64": "", "status_code": 200, "error": None}
+
+    mock_engine.crawl_url.side_effect = fake_crawl
+
+    results = await crawl_site(mock_engine, "https://example.com", max_pages=1, max_depth=1)
+
+    assert len(results) == 1
+    assert results[0]["url"] == "https://example.com"

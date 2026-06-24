@@ -34,13 +34,21 @@ def _is_retryable(result: dict) -> bool:
     return True
 
 
-async def _crawl_with_retry(engine: "CrawlerEngine", url: str, max_attempts: int = 2) -> dict:
+async def _crawl_with_retry(
+    engine: "CrawlerEngine",
+    url: str,
+    max_attempts: int = 2,
+    take_screenshot: bool = False,
+) -> dict:
     """Attempt to crawl url up to max_attempts times; return last result on all failures."""
-    result = await engine.crawl_url(url)
-    if not _is_retryable(result):
-        return result
-    await asyncio.sleep(1.0)
-    return await engine.crawl_url(url)
+    result: dict = {}
+    for attempt in range(max_attempts):
+        result = await engine.crawl_url(url, take_screenshot=take_screenshot)
+        if not _is_retryable(result):
+            return result
+        if attempt < max_attempts - 1:
+            await asyncio.sleep(1.0)
+    return result
 
 
 def _base_url(url: str) -> str:
@@ -84,6 +92,7 @@ async def crawl_site(
     allowed_domains: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     concurrency: int = 4,
+    take_screenshot: bool = False,
 ) -> list[dict]:
     """Crawl an entire site starting from *url* using a concurrent worker pool.
 
@@ -95,6 +104,8 @@ async def crawl_site(
         allowed_domains: Additional domains to crawl.
         exclude_patterns: URL substrings to skip.
         concurrency: Number of pages to crawl in parallel (default 4).
+        take_screenshot: If True, each page screenshot is captured (required for
+            vision fallback in crawl jobs that produce markdown output).
 
     Returns:
         List of crawl result dicts (one per crawled URL).
@@ -134,7 +145,7 @@ async def crawl_site(
                 })
                 return
 
-            result = await _crawl_with_retry(engine, current_url)
+            result = await _crawl_with_retry(engine, current_url, take_screenshot=take_screenshot)
             results.append(result)
 
             if depth >= max_depth or result["error"] is not None:
@@ -160,6 +171,9 @@ async def crawl_site(
 
     while not queue.empty() or any(not t.done() for t in tasks):
         # Drain queue into tasks up to max_pages
+        # len(visited) already accounts for every URL we've committed to crawl.
+        # Using <= max_pages lets us dispatch URLs already tracked in visited
+        # (they were added there by _process_one before being queued).
         while not queue.empty() and len(visited) <= max_pages:
             current_url, depth = await queue.get()
             task = asyncio.create_task(_process_one(current_url, depth))
@@ -169,7 +183,7 @@ async def crawl_site(
             break
 
         # Wait for at least one task to finish before checking the queue again
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        _, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         tasks = list(pending)
 
         if len(results) >= max_pages:
@@ -183,4 +197,5 @@ async def crawl_site(
             if isinstance(outcome, Exception) and not isinstance(outcome, asyncio.CancelledError):
                 logger.warning("Task raised unhandled exception during crawl cleanup: %s", outcome)
 
+    # Overshoot: up to concurrency-1 extra pages may complete; truncate to the requested cap.
     return results[:max_pages]
