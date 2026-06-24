@@ -80,25 +80,21 @@ async def crawl_site(
     max_depth: int = MAX_DEPTH,
     allowed_domains: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
+    concurrency: int = 4,
 ) -> list[dict]:
-    """Crawl an entire site starting from *url*.
-
-    Follows href links found on each page while respecting depth and page
-    limits.  Only links belonging to the same domain (or *allowed_domains*)
-    are followed.
+    """Crawl an entire site starting from *url* using a concurrent worker pool.
 
     Args:
         engine: A CrawlerEngine instance used to crawl individual URLs.
         url: Seed URL.
         max_pages: Maximum number of pages to crawl.
         max_depth: Maximum link depth from the seed URL.
-        allowed_domains: Additional domains to crawl.  If None, only the
-            seed domain is followed.
-        exclude_patterns: URL substrings; any link containing one of these
-            strings is skipped.
+        allowed_domains: Additional domains to crawl.
+        exclude_patterns: URL substrings to skip.
+        concurrency: Number of pages to crawl in parallel (default 4).
 
     Returns:
-        List of crawl_url result dicts (one per crawled URL).
+        List of crawl result dicts (one per crawled URL).
     """
     seed_parsed = urlparse(url)
     seed_domain: str = seed_parsed.netloc
@@ -109,6 +105,8 @@ async def crawl_site(
 
     exclude: list[str] = exclude_patterns or []
 
+    visited: set[str] = set()
+    results: list[dict] = []
     robot_parsers: dict[str, urllib.robotparser.RobotFileParser] = {}
 
     async def _is_allowed(target_url: str) -> bool:
@@ -117,42 +115,64 @@ async def crawl_site(
             robot_parsers[domain] = await _fetch_robots(domain)
         return robot_parsers[domain].can_fetch("*", target_url)
 
-    visited: set[str] = set()
-    results: list[dict] = []
-
     # Queue entries: (url, depth)
     queue: asyncio.Queue[tuple[str, int]] = asyncio.Queue()
     await queue.put((url, 0))
+    visited.add(url)
 
-    while not queue.empty() and len(results) < max_pages:
-        current_url, depth = await queue.get()
+    sem = asyncio.Semaphore(concurrency)
 
-        if current_url in visited:
-            continue
-        visited.add(current_url)
+    async def _process_one(current_url: str, depth: int) -> None:
+        async with sem:
+            if not await _is_allowed(current_url):
+                results.append({
+                    "url": current_url, "html": "", "screenshot_b64": "",
+                    "status_code": 0, "error": "Blocked by robots.txt"
+                })
+                return
 
-        if not await _is_allowed(current_url):
-            results.append({"url": current_url, "html": "", "screenshot_b64": "", "status_code": 0, "error": "Blocked by robots.txt"})
-            continue
-        result = await _crawl_with_retry(engine, current_url)
-        results.append(result)
+            result = await _crawl_with_retry(engine, current_url)
+            results.append(result)
 
-        if depth >= max_depth or result["error"] is not None:
-            continue
+            if depth >= max_depth or result["error"] is not None:
+                return
 
-        links = _extract_links(result["html"], current_url)
-        for link in links:
-            if link in visited:
-                continue
-            if len(visited) + queue.qsize() >= max_pages:
-                break
+            links = _extract_links(result["html"], current_url)
+            for link in links:
+                if link in visited:
+                    continue
+                if len(visited) >= max_pages:
+                    break
+                link_domain = urlparse(link).netloc
+                if link_domain not in permitted_domains:
+                    continue
+                if any(pat in link for pat in exclude):
+                    continue
+                visited.add(link)
+                await queue.put((link, depth + 1))
 
-            link_domain = urlparse(link).netloc
-            if link_domain not in permitted_domains:
-                continue
-            if any(pat in link for pat in exclude):
-                continue
+    tasks: list[asyncio.Task] = []
 
-            await queue.put((link, depth + 1))
+    while not queue.empty() or any(not t.done() for t in tasks):
+        # Drain queue into tasks up to max_pages
+        while not queue.empty() and len(visited) <= max_pages:
+            current_url, depth = await queue.get()
+            task = asyncio.create_task(_process_one(current_url, depth))
+            tasks.append(task)
 
-    return results
+        if not tasks:
+            break
+
+        # Wait for at least one task to finish before checking the queue again
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        tasks = list(pending)
+
+        if len(results) >= max_pages:
+            for t in tasks:
+                t.cancel()
+            break
+
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    return results[:max_pages]
