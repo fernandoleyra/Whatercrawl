@@ -26,11 +26,11 @@ COPY sdk/ ./sdk/
 RUN playwright install chromium --with-deps 2>/dev/null || playwright install chromium
 
 # Create non-root user
-RUN useradd -r -s /bin/false webcrawl && \
+RUN useradd -r -s /bin/false watercrawl && \
     mkdir -p /app/data /app/memory && \
-    chown -R webcrawl:webcrawl /app
+    chown -R watercrawl:watercrawl /app
 
-USER webcrawl
+USER watercrawl
 
 EXPOSE 8000
 

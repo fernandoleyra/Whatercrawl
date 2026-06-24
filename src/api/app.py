@@ -102,7 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="Firecrawl Clone",
+    title="Watercrawl",
     description="Playwright-powered web crawl and extraction API.",
     version="0.1.0",
     lifespan=lifespan,

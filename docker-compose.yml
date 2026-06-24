@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  webcrawl:
+  watercrawl:
     build: .
     ports:
       - "8000:8000"
@@ -9,14 +9,14 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - HOST=0.0.0.0
       - PORT=8000
-      - WEBCRAWL_DB_PATH=/app/data/webcrawl.db
+      - WATERCRAWL_DB_PATH=/app/data/watercrawl.db
       - MAX_CONCURRENT_CRAWLS=${MAX_CONCURRENT_CRAWLS:-5}
       - DEFAULT_TIMEOUT=${DEFAULT_TIMEOUT:-30}
       - DEFAULT_MAX_PAGES=${DEFAULT_MAX_PAGES:-100}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - webcrawl_data:/app/data
-      - webcrawl_memory:/app/memory
+      - watercrawl_data:/app/data
+      - watercrawl_memory:/app/memory
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/docs')"]
@@ -25,5 +25,5 @@ services:
       retries: 3
 
 volumes:
-  webcrawl_data:
-  webcrawl_memory:
+  watercrawl_data:
+  watercrawl_memory:

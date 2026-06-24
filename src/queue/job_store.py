@@ -18,7 +18,7 @@ from typing import Optional
 
 import aiosqlite
 
-DB_PATH_DEFAULT = "webcrawl.db"
+DB_PATH_DEFAULT = "watercrawl.db"
 BUSY_TIMEOUT_MS = 5000
 
 _CREATE_TABLE_SQL = """
@@ -60,7 +60,7 @@ class JobStore:
     def __init__(self, db_path: Optional[str] = None) -> None:
         self._db_path: str = (
             db_path
-            or os.environ.get("WEBCRAWL_DB_PATH")
+            or os.environ.get("WATERCRAWL_DB_PATH")
             or DB_PATH_DEFAULT
         )
         self._conn: Optional[aiosqlite.Connection] = None
