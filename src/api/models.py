@@ -26,11 +26,6 @@ class CrawlRequest(BaseModel):
     output_format: str = "markdown"
 
 
-class ExtractRequest(BaseModel):
-    url: str
-    schema: dict
-
-
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
@@ -54,6 +49,21 @@ class CrawlStatusResponse(BaseModel):
     pages: list[dict]
 
 
-class ExtractResponse(BaseModel):
+class SearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+    output_format: Literal["markdown", "text"] = "markdown"
+
+
+class SearchResult(BaseModel):
     url: str
-    data: dict
+    title: str
+    snippet: str
+    content: str
+
+
+class SearchResponse(BaseModel):
+    query: str
+    results: list[SearchResult]
+
+

@@ -1,11 +1,10 @@
 """
-src/api/app.py — FastAPI application with lifespan and 4 endpoints.
+src/api/app.py — FastAPI application with lifespan and 3 endpoints.
 
 Endpoints:
-  POST /scrape        — Crawl a single URL and return extracted content.
+  POST /scrape        — Scrape a single URL and return extracted content.
   POST /crawl         — Start a background site-crawl job.
   GET  /crawl/{job_id} — Poll the status of a crawl job.
-  POST /extract       — Placeholder structured-extraction endpoint (M5).
 """
 
 from __future__ import annotations
@@ -23,15 +22,16 @@ from src.api.models import (
     CrawlJobResponse,
     CrawlRequest,
     CrawlStatusResponse,
-    ExtractRequest,
-    ExtractResponse,
     ScrapeRequest,
     ScrapeResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
 )
 from src.crawler.engine import CrawlerEngine
+from src.crawler.search import search_web
 from src.crawler.site_crawler import crawl_site
 from src.extractor.extractor import ContentExtractor
-from src.extractor.structured import StructuredExtractor
 from src.queue.job_store import JobStore
 
 logger = logging.getLogger(__name__)
@@ -58,23 +58,14 @@ async def _run_crawl_job(state, job_id: str, req: CrawlRequest) -> None:
                 req.url,
                 max_pages=req.max_pages,
                 max_depth=req.max_depth,
-                take_screenshot=True,
             )
         pages = []
         for r in results:
             if r["error"]:
                 pages.append({"url": r["url"], "content": "", "error": r["error"]})
             else:
-                try:
-                    content = await state.extractor.extract_with_fallback(
-                        r["html"], r["screenshot_b64"]
-                    )
-                    pages.append({"url": r["url"], "content": content, "error": None})
-                except Exception as page_exc:  # noqa: BLE001
-                    logger.warning(
-                        "Extraction failed for %s: %s", r["url"], page_exc
-                    )
-                    pages.append({"url": r["url"], "content": "", "error": str(page_exc)})
+                content = state.extractor.extract_markdown(r["html"])
+                pages.append({"url": r["url"], "content": content, "error": None})
         await state.job_store.update_job(job_id, status="done", result=pages)
     except Exception as exc:  # noqa: BLE001
         logger.error("Crawl job %s failed: %s", job_id, exc)
@@ -93,13 +84,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     job_store = JobStore()
     await job_store.init()
     extractor = ContentExtractor()
-    structured_extractor = StructuredExtractor()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
     app.state.crawler = crawler
     app.state.job_store = job_store
     app.state.extractor = extractor
-    app.state.structured_extractor = structured_extractor
     app.state.semaphore = semaphore
 
     logger.info("FastAPI app started (MAX_CONCURRENT_CRAWLS=%d).", MAX_CONCURRENT)
@@ -138,10 +127,7 @@ async def scrape(req: ScrapeRequest, request: Request) -> ScrapeResponse:
 
     await semaphore.acquire()
     try:
-        result = await crawler.crawl_url(
-            req.url,
-            take_screenshot=(req.output_format == "markdown"),
-        )
+        result = await crawler.crawl_url(req.url)
 
         if result["error"]:
             raise HTTPException(
@@ -150,10 +136,9 @@ async def scrape(req: ScrapeRequest, request: Request) -> ScrapeResponse:
             )
 
         html: str = result["html"]
-        screenshot_b64: str = result["screenshot_b64"]
 
         if req.output_format == "markdown":
-            content = await extractor.extract_with_fallback(html, screenshot_b64)
+            content = extractor.extract_markdown(html)
         elif req.output_format == "text":
             content = extractor.extract_text(html)
         else:  # "html"
@@ -218,24 +203,22 @@ async def get_crawl_status(job_id: str, request: Request) -> CrawlStatusResponse
     )
 
 
-@app.post("/extract", response_model=ExtractResponse)
-async def extract(req: ExtractRequest, request: Request) -> ExtractResponse:
-    """Scrape a URL and extract structured data matching the provided JSON schema."""
+@app.post("/search", response_model=SearchResponse)
+async def search(req: SearchRequest, request: Request) -> SearchResponse:
+    """Search the web and return full-page content for each result."""
     crawler: CrawlerEngine = request.app.state.crawler
-    structured_extractor: StructuredExtractor = request.app.state.structured_extractor
     semaphore: asyncio.Semaphore = request.app.state.semaphore
 
     await semaphore.acquire()
     try:
-        result = await crawler.crawl_url(req.url)
-        if result["error"]:
-            raise HTTPException(status_code=502, detail=result["error"])
-
-        data = await structured_extractor.extract(result["html"], req.schema)
-        return ExtractResponse(url=req.url, data=data)
-    except Exception as exc:
-        if isinstance(exc, HTTPException):
-            raise
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        results = await search_web(
+            crawler, req.query, max_results=req.max_results, output_format=req.output_format
+        )
+        return SearchResponse(
+            query=req.query,
+            results=[SearchResult(**r) for r in results],
+        )
     finally:
         semaphore.release()
+
+
