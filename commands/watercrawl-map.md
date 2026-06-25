@@ -1,6 +1,7 @@
-Discover all URLs on a website using the local Watercrawl API.
+---
+description: Discover all URLs on a domain via sitemap or link crawl.
+---
 
-If the user provided a URL, use it. If not, ask: "Which website should I map?"
-Optionally ask: "Do you want to filter URLs by a keyword (e.g. 'docs', 'api')?"
+Invoke the `watercrawl-map` skill.
 
-Use the watercrawl-map skill to fetch and present the URL list.
+URL and options: $ARGUMENTS

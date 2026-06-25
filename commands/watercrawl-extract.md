@@ -1,6 +1,9 @@
-Extract structured data from a URL using the local Watercrawl API.
+---
+description: Scrape a URL and extract structured JSON fields you define.
+---
 
-If the user provided a URL, use it. If not, ask: "Which URL should I extract data from?"
-If the user did not specify fields, ask: "Which fields do you want to extract?"
+Invoke the `watercrawl-extract` skill.
 
-Use the watercrawl-extract skill to build the schema and fetch the structured data.
+URL and schema: $ARGUMENTS
+
+If no schema is provided in $ARGUMENTS, ask the user what fields they want before proceeding.

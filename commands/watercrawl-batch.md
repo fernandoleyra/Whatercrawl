@@ -1,5 +1,7 @@
-Scrape multiple URLs concurrently and return all results at once.
+---
+description: Scrape multiple URLs and return all content.
+---
 
-If the user provided URLs, use them. If not, ask: "Which URLs should I scrape?"
+Invoke the `watercrawl-batch` skill.
 
-Use the watercrawl-batch skill to fetch all pages in parallel.
+URLs (comma or newline separated): $ARGUMENTS

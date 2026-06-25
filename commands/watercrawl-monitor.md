@@ -1,6 +1,7 @@
-Watch a URL for content changes by taking a baseline snapshot and comparing later.
+---
+description: Snapshot a page and detect content changes over time.
+---
 
-If the user provided a URL, use it. If not, ask: "Which URL should I monitor?"
-Ask: "Do you want a one-time check or a continuous polling loop?"
+Invoke the `watercrawl-monitor` skill.
 
-Use the watercrawl-monitor skill to snapshot and diff the page content.
+URL and action (snapshot/diff/check): $ARGUMENTS

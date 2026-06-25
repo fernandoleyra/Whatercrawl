@@ -1,5 +1,7 @@
-Take a screenshot of a URL and view it visually.
+---
+description: Take a screenshot of a webpage (requires Playwright).
+---
 
-If the user provided a URL, use it. If not, ask: "Which URL should I screenshot?"
+Invoke the `watercrawl-screenshot` skill.
 
-Use the watercrawl-screenshot skill to capture and display the page.
+URL and options: $ARGUMENTS

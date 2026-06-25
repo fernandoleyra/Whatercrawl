@@ -1,6 +1,7 @@
-Crawl an entire website with the local Watercrawl API.
+---
+description: Crawl a website by following links and return all pages as Markdown.
+---
 
-If the user provided a URL, use it. If not, ask: "Which URL should I crawl?"
-Ask for max_pages if not provided — default is 50.
+Invoke the `watercrawl-crawl` skill.
 
-Use the watercrawl-crawl skill to start the job, poll for completion, and surface the results.
+URL and options (e.g. max_pages=20): $ARGUMENTS

@@ -1,5 +1,7 @@
-Extract all links from a page with anchor text and surrounding context.
+---
+description: Extract all links from a page with anchor text and context.
+---
 
-If the user provided a URL, use it. If not, ask: "Which page should I extract links from?"
+Invoke the `watercrawl-links` skill.
 
-Use the watercrawl-links skill to fetch and present the links.
+URL and filter options: $ARGUMENTS
