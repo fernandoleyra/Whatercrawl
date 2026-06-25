@@ -78,3 +78,22 @@ class MapResponse(BaseModel):
     urls: list[str]
     count: int
 
+
+class InteractAction(BaseModel):
+    type: Literal["click", "fill", "wait", "scroll", "press"]
+    selector: str = ""
+    value: str = ""
+    ms: int = 500
+
+
+class InteractRequest(BaseModel):
+    url: str
+    actions: list[InteractAction]
+    output_format: Literal["markdown", "text", "html"] = "markdown"
+
+
+class InteractResponse(BaseModel):
+    url: str
+    content: str
+    format: str
+

@@ -22,6 +22,8 @@ from src.api.models import (
     CrawlJobResponse,
     CrawlRequest,
     CrawlStatusResponse,
+    InteractRequest,
+    InteractResponse,
     MapRequest,
     MapResponse,
     ScrapeRequest,
@@ -31,6 +33,7 @@ from src.api.models import (
     SearchResult,
 )
 from src.crawler.engine import CrawlerEngine
+from src.crawler.interactor import interact_and_scrape
 from src.crawler.mapper import map_site
 from src.crawler.search import search_web
 from src.crawler.site_crawler import crawl_site
@@ -239,6 +242,27 @@ async def map_urls(req: MapRequest, request: Request) -> MapResponse:
             crawler, req.url, max_urls=req.max_urls, filter_keyword=req.filter_keyword
         )
         return MapResponse(url=req.url, urls=urls, count=len(urls))
+    finally:
+        semaphore.release()
+
+
+@app.post("/interact", response_model=InteractResponse)
+async def interact(req: InteractRequest, request: Request) -> InteractResponse:
+    """Navigate a URL, execute browser actions, and return resulting page content."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await interact_and_scrape(
+            crawler,
+            req.url,
+            [a.model_dump() for a in req.actions],
+            output_format=req.output_format,
+        )
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        return InteractResponse(url=result["url"], content=result["content"], format=result["format"])
     finally:
         semaphore.release()
 
