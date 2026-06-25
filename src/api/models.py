@@ -124,3 +124,20 @@ class ScreenshotResponse(BaseModel):
     width: int
     height: int
 
+
+class LinksRequest(BaseModel):
+    url: str
+    include_external: bool = True
+
+
+class LinkItem(BaseModel):
+    url: str
+    text: str
+    context: str
+
+
+class LinksResponse(BaseModel):
+    url: str
+    links: list[LinkItem]
+    count: int
+

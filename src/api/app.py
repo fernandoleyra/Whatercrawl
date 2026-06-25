@@ -27,6 +27,9 @@ from src.api.models import (
     CrawlStatusResponse,
     InteractRequest,
     InteractResponse,
+    LinkItem,
+    LinksRequest,
+    LinksResponse,
     MapRequest,
     MapResponse,
     ScrapeRequest,
@@ -38,6 +41,7 @@ from src.api.models import (
     SearchResult,
 )
 from src.crawler.engine import CrawlerEngine
+from src.extractor.links import extract_links
 from src.crawler.interactor import interact_and_scrape
 from src.crawler.mapper import map_site
 from src.crawler.search import search_web
@@ -321,6 +325,33 @@ async def interact(req: InteractRequest, request: Request) -> InteractResponse:
         if result["error"]:
             raise HTTPException(status_code=502, detail=result["error"])
         return InteractResponse(url=result["url"], content=result["content"], format=result["format"])
+    finally:
+        semaphore.release()
+
+
+@app.post("/links", response_model=LinksResponse)
+async def links(req: LinksRequest, request: Request) -> LinksResponse:
+    """Scrape a URL and return all links with anchor text and surrounding context."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(req.url)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+
+        all_links = extract_links(result["html"], req.url)
+        if not req.include_external:
+            import urllib.parse
+            origin = urllib.parse.urlparse(req.url)
+            all_links = [
+                lnk for lnk in all_links
+                if urllib.parse.urlparse(lnk["url"]).netloc == origin.netloc
+            ]
+
+        items = [LinkItem(**lnk) for lnk in all_links]
+        return LinksResponse(url=req.url, links=items, count=len(items))
     finally:
         semaphore.release()
 
