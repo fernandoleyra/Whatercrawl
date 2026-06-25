@@ -14,7 +14,6 @@ Watercrawl is a production-grade web scraping API that converts any URL or entir
 git clone <repo>
 cd watercrawl
 cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY
 docker-compose up
 # API is now running at http://localhost:8000
 ```
@@ -26,7 +25,6 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
 cp .env.example .env
-# Set ANTHROPIC_API_KEY in .env
 uvicorn src.api.app:app --reload
 ```
 
