@@ -22,6 +22,8 @@ from src.api.models import (
     CrawlJobResponse,
     CrawlRequest,
     CrawlStatusResponse,
+    MapRequest,
+    MapResponse,
     ScrapeRequest,
     ScrapeResponse,
     SearchRequest,
@@ -29,6 +31,7 @@ from src.api.models import (
     SearchResult,
 )
 from src.crawler.engine import CrawlerEngine
+from src.crawler.mapper import map_site
 from src.crawler.search import search_web
 from src.crawler.site_crawler import crawl_site
 from src.extractor.extractor import ContentExtractor
@@ -223,4 +226,19 @@ async def search(req: SearchRequest, request: Request) -> SearchResponse:
     finally:
         semaphore.release()
 
+
+@app.post("/map", response_model=MapResponse)
+async def map_urls(req: MapRequest, request: Request) -> MapResponse:
+    """Discover all URLs on a domain via sitemap or link crawl."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        urls = await map_site(
+            crawler, req.url, max_urls=req.max_urls, filter_keyword=req.filter_keyword
+        )
+        return MapResponse(url=req.url, urls=urls, count=len(urls))
+    finally:
+        semaphore.release()
 

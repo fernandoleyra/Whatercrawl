@@ -67,3 +67,14 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
 
 
+class MapRequest(BaseModel):
+    url: str
+    max_urls: int = 200
+    filter_keyword: str = ""
+
+
+class MapResponse(BaseModel):
+    url: str
+    urls: list[str]
+    count: int
+
