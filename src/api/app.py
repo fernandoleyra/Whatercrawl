@@ -1,18 +1,27 @@
 """
-src/api/app.py — FastAPI application with lifespan and 4 endpoints.
+src/api/app.py — FastAPI application with lifespan and 12 endpoints.
 
 Endpoints:
-  POST /scrape        — Crawl a single URL and return extracted content.
-  POST /crawl         — Start a background site-crawl job.
-  GET  /crawl/{job_id} — Poll the status of a crawl job.
-  POST /extract       — Placeholder structured-extraction endpoint (M5).
+  POST /scrape             — Scrape a single URL and return extracted content.
+  POST /crawl              — Start a background site-crawl job.
+  GET  /crawl/{job_id}     — Poll the status of a crawl job.
+  POST /search             — Search the web and return full-page content per result.
+  POST /map                — Discover all URLs on a domain via sitemap or link crawl.
+  POST /batch              — Scrape multiple URLs concurrently.
+  POST /screenshot         — Take a screenshot of a URL and return it as base64 PNG.
+  POST /interact           — Execute browser actions on a page and return resulting content.
+  POST /links              — Return all links with anchor text and context from a URL.
+  POST /monitor/snapshot   — Scrape a URL and store its content as a named snapshot.
+  POST /monitor/check      — Re-scrape a snapshotted URL and return a content diff.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncGenerator
@@ -20,18 +29,40 @@ from typing import AsyncGenerator
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 
 from src.api.models import (
+    BatchRequest,
+    BatchResponse,
+    BatchResult,
     CrawlJobResponse,
     CrawlRequest,
     CrawlStatusResponse,
-    ExtractRequest,
-    ExtractResponse,
+    InteractRequest,
+    InteractResponse,
+    LinkItem,
+    LinksRequest,
+    LinksResponse,
+    MapRequest,
+    MapResponse,
+    MonitorCheckRequest,
+    MonitorDiff,
+    MonitorRequest,
+    MonitorResponse,
+    MonitorSnapshotResponse,
     ScrapeRequest,
     ScrapeResponse,
+    ScreenshotRequest,
+    ScreenshotResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
 )
 from src.crawler.engine import CrawlerEngine
+from src.extractor.differ import diff_content
+from src.extractor.links import extract_links
+from src.crawler.interactor import interact_and_scrape
+from src.crawler.mapper import map_site
+from src.crawler.search import search_web
 from src.crawler.site_crawler import crawl_site
 from src.extractor.extractor import ContentExtractor
-from src.extractor.structured import StructuredExtractor
 from src.queue.job_store import JobStore
 
 logger = logging.getLogger(__name__)
@@ -58,23 +89,14 @@ async def _run_crawl_job(state, job_id: str, req: CrawlRequest) -> None:
                 req.url,
                 max_pages=req.max_pages,
                 max_depth=req.max_depth,
-                take_screenshot=True,
             )
         pages = []
         for r in results:
             if r["error"]:
                 pages.append({"url": r["url"], "content": "", "error": r["error"]})
             else:
-                try:
-                    content = await state.extractor.extract_with_fallback(
-                        r["html"], r["screenshot_b64"]
-                    )
-                    pages.append({"url": r["url"], "content": content, "error": None})
-                except Exception as page_exc:  # noqa: BLE001
-                    logger.warning(
-                        "Extraction failed for %s: %s", r["url"], page_exc
-                    )
-                    pages.append({"url": r["url"], "content": "", "error": str(page_exc)})
+                content = state.extractor.extract_markdown(r["html"])
+                pages.append({"url": r["url"], "content": content, "error": None})
         await state.job_store.update_job(job_id, status="done", result=pages)
     except Exception as exc:  # noqa: BLE001
         logger.error("Crawl job %s failed: %s", job_id, exc)
@@ -93,13 +115,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     job_store = JobStore()
     await job_store.init()
     extractor = ContentExtractor()
-    structured_extractor = StructuredExtractor()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
     app.state.crawler = crawler
     app.state.job_store = job_store
     app.state.extractor = extractor
-    app.state.structured_extractor = structured_extractor
     app.state.semaphore = semaphore
 
     logger.info("FastAPI app started (MAX_CONCURRENT_CRAWLS=%d).", MAX_CONCURRENT)
@@ -138,10 +158,7 @@ async def scrape(req: ScrapeRequest, request: Request) -> ScrapeResponse:
 
     await semaphore.acquire()
     try:
-        result = await crawler.crawl_url(
-            req.url,
-            take_screenshot=(req.output_format == "markdown"),
-        )
+        result = await crawler.crawl_url(req.url)
 
         if result["error"]:
             raise HTTPException(
@@ -150,10 +167,9 @@ async def scrape(req: ScrapeRequest, request: Request) -> ScrapeResponse:
             )
 
         html: str = result["html"]
-        screenshot_b64: str = result["screenshot_b64"]
 
         if req.output_format == "markdown":
-            content = await extractor.extract_with_fallback(html, screenshot_b64)
+            content = extractor.extract_markdown(html)
         elif req.output_format == "text":
             content = extractor.extract_text(html)
         else:  # "html"
@@ -218,11 +234,123 @@ async def get_crawl_status(job_id: str, request: Request) -> CrawlStatusResponse
     )
 
 
-@app.post("/extract", response_model=ExtractResponse)
-async def extract(req: ExtractRequest, request: Request) -> ExtractResponse:
-    """Scrape a URL and extract structured data matching the provided JSON schema."""
+@app.post("/search", response_model=SearchResponse)
+async def search(req: SearchRequest, request: Request) -> SearchResponse:
+    """Search the web and return full-page content for each result."""
     crawler: CrawlerEngine = request.app.state.crawler
-    structured_extractor: StructuredExtractor = request.app.state.structured_extractor
+    extractor: ContentExtractor = request.app.state.extractor
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        results = await search_web(
+            crawler, req.query, max_results=req.max_results, output_format=req.output_format,
+            extractor=extractor,
+        )
+        return SearchResponse(
+            query=req.query,
+            results=[SearchResult(**r) for r in results],
+        )
+    finally:
+        semaphore.release()
+
+
+@app.post("/map", response_model=MapResponse)
+async def map_urls(req: MapRequest, request: Request) -> MapResponse:
+    """Discover all URLs on a domain via sitemap or link crawl."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        urls = await map_site(
+            crawler, req.url, max_urls=req.max_urls, filter_keyword=req.filter_keyword
+        )
+        return MapResponse(url=req.url, urls=urls, count=len(urls))
+    finally:
+        semaphore.release()
+
+
+@app.post("/batch", response_model=BatchResponse)
+async def batch_scrape(req: BatchRequest, request: Request) -> BatchResponse:
+    """Scrape multiple URLs concurrently and return all results."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    extractor: ContentExtractor = request.app.state.extractor
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    if not req.urls:
+        return BatchResponse(results=[])
+
+    async def _scrape_one(url: str) -> BatchResult:
+        await semaphore.acquire()
+        try:
+            result = await crawler.crawl_url(url)
+            if result["error"]:
+                return BatchResult(url=url, content="", error=result["error"])
+            if req.output_format == "text":
+                content = extractor.extract_text(result["html"])
+            elif req.output_format == "html":
+                content = extractor.extract_raw(result["html"])
+            else:
+                content = extractor.extract_markdown(result["html"])
+            return BatchResult(url=url, content=content)
+        finally:
+            semaphore.release()
+
+    results = await asyncio.gather(*[_scrape_one(url) for url in req.urls])
+    return BatchResponse(results=list(results))
+
+
+@app.post("/screenshot", response_model=ScreenshotResponse)
+async def screenshot(req: ScreenshotRequest, request: Request) -> ScreenshotResponse:
+    """Navigate to a URL, take a screenshot, and return it as base64 PNG."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(req.url, take_screenshot=True, full_page=req.full_page)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        if not result["screenshot_b64"]:
+            raise HTTPException(status_code=500, detail="Screenshot capture failed")
+        return ScreenshotResponse(
+            url=req.url,
+            screenshot_b64=result["screenshot_b64"],
+            # width and height are not surfaced by the Playwright engine; callers should
+            # decode the base64 PNG to determine actual dimensions.
+            width=0,
+            height=0,
+        )
+    finally:
+        semaphore.release()
+
+
+@app.post("/interact", response_model=InteractResponse)
+async def interact(req: InteractRequest, request: Request) -> InteractResponse:
+    """Navigate a URL, execute browser actions, and return resulting page content."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await interact_and_scrape(
+            crawler,
+            req.url,
+            [a.model_dump() for a in req.actions],
+            output_format=req.output_format,
+        )
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        return InteractResponse(url=result["url"], content=result["content"], format=result["format"])
+    finally:
+        semaphore.release()
+
+
+@app.post("/links", response_model=LinksResponse)
+async def links(req: LinksRequest, request: Request) -> LinksResponse:
+    """Scrape a URL and return all links with anchor text and surrounding context."""
+    crawler: CrawlerEngine = request.app.state.crawler
     semaphore: asyncio.Semaphore = request.app.state.semaphore
 
     await semaphore.acquire()
@@ -231,11 +359,75 @@ async def extract(req: ExtractRequest, request: Request) -> ExtractResponse:
         if result["error"]:
             raise HTTPException(status_code=502, detail=result["error"])
 
-        data = await structured_extractor.extract(result["html"], req.schema)
-        return ExtractResponse(url=req.url, data=data)
-    except Exception as exc:
-        if isinstance(exc, HTTPException):
-            raise
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        all_links = extract_links(result["html"], req.url)
+        if not req.include_external:
+            origin = urllib.parse.urlparse(req.url)
+            all_links = [
+                lnk for lnk in all_links
+                if urllib.parse.urlparse(lnk["url"]).netloc == origin.netloc
+            ]
+
+        items = [LinkItem(**lnk) for lnk in all_links]
+        return LinksResponse(url=req.url, links=items, count=len(items))
     finally:
         semaphore.release()
+
+
+@app.post("/monitor/snapshot", response_model=MonitorSnapshotResponse)
+async def monitor_snapshot(req: MonitorRequest, request: Request) -> MonitorSnapshotResponse:
+    """Scrape a URL and store its content as a named snapshot."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    extractor: ContentExtractor = request.app.state.extractor
+    job_store: JobStore = request.app.state.job_store
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(req.url)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        content = extractor.extract_markdown(result["html"])
+    finally:
+        semaphore.release()
+
+    snapshot_id = await job_store.create_job("monitor", {"url": req.url})
+    await job_store.update_job(snapshot_id, status="done", result=[{"url": req.url, "content": content}])
+    return MonitorSnapshotResponse(snapshot_id=snapshot_id, url=req.url)
+
+
+@app.post("/monitor/check", response_model=MonitorResponse)
+async def monitor_check(req: MonitorCheckRequest, request: Request) -> MonitorResponse:
+    """Re-scrape the URL from a prior snapshot and return a content diff."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    extractor: ContentExtractor = request.app.state.extractor
+    job_store: JobStore = request.app.state.job_store
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    snapshot = await job_store.get_job(req.snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail=f"Snapshot '{req.snapshot_id}' not found.")
+
+    params = json.loads(snapshot["params"]) if isinstance(snapshot["params"], str) else snapshot["params"]
+    url = params.get("url", "")
+    old_content = (snapshot["result"] or [{}])[0].get("content", "")
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(url)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        new_content = extractor.extract_markdown(result["html"])
+    finally:
+        semaphore.release()
+
+    diff = diff_content(old_content, new_content)
+    new_snapshot_id = await job_store.create_job("monitor", {"url": url})
+    await job_store.update_job(new_snapshot_id, status="done", result=[{"url": url, "content": new_content}])
+
+    return MonitorResponse(
+        snapshot_id=req.snapshot_id,
+        url=url,
+        diff=MonitorDiff(**diff),
+        new_snapshot_id=new_snapshot_id,
+    )
+

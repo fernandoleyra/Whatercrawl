@@ -146,6 +146,7 @@ class CrawlerEngine:
         timeout_ms: int = TIMEOUT_MS,
         robots_allowed: bool = True,
         take_screenshot: bool = False,
+        full_page: bool = True,
     ) -> dict:
         """Crawl a single URL and return a structured result dict.
 
@@ -192,7 +193,7 @@ class CrawlerEngine:
             screenshot_b64 = ""
             if take_screenshot:
                 screenshot_bytes: bytes = await page.screenshot(
-                    full_page=True, type="png"
+                    full_page=full_page, type="png"
                 )
                 screenshot_b64 = base64.standard_b64encode(screenshot_bytes).decode(
                     "utf-8"
