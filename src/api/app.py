@@ -207,12 +207,14 @@ async def get_crawl_status(job_id: str, request: Request) -> CrawlStatusResponse
 async def search(req: SearchRequest, request: Request) -> SearchResponse:
     """Search the web and return full-page content for each result."""
     crawler: CrawlerEngine = request.app.state.crawler
+    extractor: ContentExtractor = request.app.state.extractor
     semaphore: asyncio.Semaphore = request.app.state.semaphore
 
     await semaphore.acquire()
     try:
         results = await search_web(
-            crawler, req.query, max_results=req.max_results, output_format=req.output_format
+            crawler, req.query, max_results=req.max_results, output_format=req.output_format,
+            extractor=extractor,
         )
         return SearchResponse(
             query=req.query,

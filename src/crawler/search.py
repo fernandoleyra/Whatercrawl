@@ -24,6 +24,7 @@ async def search_web(
     query: str,
     max_results: int = 5,
     output_format: str = "markdown",
+    extractor=None,
 ) -> list[dict]:
     """
     Search DuckDuckGo HTML and scrape full content for each result URL.
@@ -31,6 +32,7 @@ async def search_web(
     Returns a list of dicts: {url, title, snippet, content}.
     Never raises — failed pages get content="".
     """
+    _ext = extractor or _extractor
     search_url = f"{DDGO_URL}?q={urllib.parse.quote_plus(query)}"
     search_result = await engine.crawl_url(search_url)
 
@@ -52,9 +54,9 @@ async def search_web(
         if page["error"]:
             content = ""
         elif output_format == "text":
-            content = _extractor.extract_text(page["html"]) or _soup_text(page["html"])
+            content = _ext.extract_text(page["html"]) or _soup_text(page["html"])
         else:
-            content = _extractor.extract_markdown(page["html"]) or _soup_text(page["html"])
+            content = _ext.extract_markdown(page["html"]) or _soup_text(page["html"])
         results.append({
             "url": item["url"],
             "title": item["title"],
