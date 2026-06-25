@@ -104,8 +104,7 @@ async def crawl_site(
         allowed_domains: Additional domains to crawl.
         exclude_patterns: URL substrings to skip.
         concurrency: Number of pages to crawl in parallel (default 4).
-        take_screenshot: If True, each page screenshot is captured (required for
-            vision fallback in crawl jobs that produce markdown output).
+        take_screenshot: If True, each page screenshot is captured and stored with the result.
 
     Returns:
         List of crawl result dicts (one per crawled URL).

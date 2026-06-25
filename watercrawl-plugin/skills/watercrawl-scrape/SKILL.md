@@ -42,7 +42,7 @@ curl -s -X POST "$BASE_URL/scrape" \
 
 ## Output formats
 
-- `markdown` (default) — clean Markdown, vision fallback for JS-heavy pages
+- `markdown` (default) — clean Markdown via trafilatura
 - `text` — plain text, no formatting
 - `html` — raw HTML
 

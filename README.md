@@ -2,7 +2,7 @@
 
 ## 1. What Watercrawl Is
 
-Watercrawl is a production-grade web scraping API that converts any URL or entire website into clean, LLM-ready Markdown or structured JSON. It is a drop-in replacement for Firecrawl with better extraction quality via a vision-based fallback and lower cost when self-hosted. Runs fully locally with one Docker command — no external queue, no cloud dependency required.
+Watercrawl is a production-grade web scraping API that converts any URL or entire website into clean, LLM-ready Markdown or structured JSON. It is a drop-in replacement for Firecrawl with better extraction quality via Playwright-powered JS rendering and lower cost when self-hosted. Runs fully locally with one Docker command — no external queue, no cloud dependency required.
 
 ---
 
