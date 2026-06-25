@@ -1,82 +1,50 @@
 ---
-name: watercrawl-monitor
-description: |
-  Use when the user wants to watch a page for changes over time. Triggers on: "monitor",
-  "watch for changes", "track", "alert me when", "notify when X changes", "has this changed",
-  "check if the price changed", "is there anything new on". Takes a baseline snapshot,
-  re-checks on demand, and reports only real content changes (not timestamps or formatting).
-  Requires local Watercrawl API at localhost:8000.
-allowed-tools:
-  - Bash(curl *)
-  - Bash(python3 *)
-  - Bash(sleep *)
+description: Snapshot a page and detect content changes compared to a previous snapshot. Use when asked to monitor a page, check for changes, or track updates to a URL.
+triggers:
+  - "monitor"
+  - "watch for changes"
+  - "track updates"
+  - "snapshot this page"
+  - "detect changes"
 ---
 
 # watercrawl-monitor
 
-## Prerequisites
+Snapshot a page and detect changes compared to a previous snapshot.
 
-Watercrawl API must be running. Start with `docker-compose up`.
+## Instructions
 
-## Workflow
+1. **Parse arguments** from `$ARGUMENTS`:
+   - `url` — required.
+   - `action` — `snapshot` (save current state), `diff` (compare with saved), or `check` (snapshot + diff if previous exists). Default: `check`.
 
-### One-time check (has this page changed?)
+2. **Determine snapshot file path**:
+   - Create `.watercrawl/snapshots/` in the current working directory
+   - Filename: URL-slug (replace `://` and `/` with `_`, strip query strings, truncate to 60 chars) + `.md`
 
-1. **Take a baseline snapshot**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-SNAP=$(curl -s -X POST "$BASE_URL/monitor/snapshot" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "URL_HERE"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['snapshot_id'])")
-echo "Snapshot: $SNAP"
-```
+3. **For `snapshot` or `check`**:
+   - Fetch the URL using WebFetch
+   - Save content to snapshot file with header:
+     ```
+     <!-- snapshot: <ISO timestamp> -->
+     <!-- url: <url> -->
+     <content>
+     ```
+   - Report: `Snapshot saved to <filepath>`
 
-2. **Check for changes (run again later)**
-```bash
-curl -s -X POST "$BASE_URL/monitor/check" \
-  -H "Content-Type: application/json" \
-  -d "{\"snapshot_id\": \"$SNAP\"}" \
-  | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-diff = d['diff']
-if not diff['changed']:
-    print('No changes detected.')
-else:
-    print('CHANGES DETECTED:')
-    for line in diff.get('added', []):
-        print(f'  + {line}')
-    for line in diff.get('removed', []):
-        print(f'  - {line}')
-print(f'New snapshot ID: {d[\"new_snapshot_id\"]}')
-"
-```
+4. **For `diff` or `check` with existing snapshot**:
+   - Read the previous snapshot
+   - Compare: word count change, added paragraphs, removed paragraphs
+   - Report:
+     ```
+     ## Change Report: <url>
+     **Previous snapshot:** <timestamp>
+     **Current snapshot:** <timestamp>
+     **Word count:** N → M (+/- delta)
 
-### Polling loop (watch continuously)
+     ### Added content
+     ### Removed content
+     ### No changes detected
+     ```
 
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-SNAP=$(curl -s -X POST "$BASE_URL/monitor/snapshot" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "URL_HERE"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['snapshot_id'])")
-
-while true; do
-  sleep 300  # check every 5 minutes
-  RESULT=$(curl -s -X POST "$BASE_URL/monitor/check" \
-    -H "Content-Type: application/json" \
-    -d "{\"snapshot_id\": \"$SNAP\"}")
-  CHANGED=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['diff']['changed'])")
-  if [ "$CHANGED" = "True" ]; then
-    echo "CHANGE DETECTED:"
-    echo "$RESULT" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-for line in d['diff']['added']: print(f'+ {line}')
-for line in d['diff']['removed']: print(f'- {line}')
-"
-  fi
-  SNAP=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['new_snapshot_id'])")
-done
-```
+5. **If no previous snapshot** and action is `diff`: take first snapshot and inform user.

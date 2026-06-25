@@ -1,45 +1,39 @@
 ---
-name: watercrawl-map
-description: |
-  Use when the user wants to discover all pages on a website or find which page contains something.
-  Triggers on: "map the site", "list all pages on", "what pages are under", "find the URL for",
-  "which page has", "show me the site structure", "find all links on". Returns a flat list of URLs
-  (from sitemap.xml or link crawl). Useful before a targeted scrape or crawl.
-  Requires local Watercrawl API at localhost:8000.
-allowed-tools:
-  - Bash(curl *)
-  - Bash(python3 *)
+description: Discover all URLs on a domain by following links. Use when asked to map a site, list all pages, or discover the URL structure of a domain.
+triggers:
+  - "map the site"
+  - "list all urls"
+  - "discover pages"
+  - "site structure"
+  - "sitemap"
 ---
 
 # watercrawl-map
 
-## Prerequisites
+Discover all URLs on a domain.
 
-Watercrawl API must be running. Start with `docker-compose up`.
+## Instructions
 
-## Workflow
+1. **Parse arguments** from `$ARGUMENTS`:
+   - `url` — required.
+   - `max_urls` — optional. Default: 50. Maximum: 200.
 
-1. **Discover all URLs**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s -X POST "$BASE_URL/map" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "URL_HERE", "max_urls": 200, "filter_keyword": ""}' \
-  | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(f'Found {d[\"count\"]} URLs on {d[\"url\"]}:')
-for u in d['urls']:
-    print(f'  {u}')
-"
-```
+2. **Try sitemap first**:
+   - Fetch `<domain>/sitemap.xml` using WebFetch
+   - If it returns valid XML with `<url><loc>` entries, parse those URLs directly
+   - Report: `Found sitemap with N URLs`
 
-2. **If a keyword filter is needed**, set `filter_keyword` to narrow results (e.g. `"docs"`, `"blog"`, `"api"`).
+3. **If no sitemap**, crawl for links:
+   - Use the crawl loop from watercrawl-crawl but collect only URLs, not content
+   - This is faster — no need to read full page content
 
-3. **Present the URL list** and suggest which URLs to scrape or crawl based on the user's goal.
+4. **Return a sorted URL list**:
+   ```
+   ## Site Map: <domain>
+   **URLs discovered:** N
+   **Method:** sitemap / link crawl
 
-## Parameters
-
-- `url` — root URL of the site to map
-- `max_urls` — maximum URLs to return (default 200)
-- `filter_keyword` — only return URLs containing this string (optional)
+   ### All URLs:
+   1. https://example.com/
+   2. https://example.com/about
+   ```

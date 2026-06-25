@@ -1,47 +1,39 @@
 ---
-name: watercrawl-batch
-description: |
-  Use when the user has a list of URLs to read and wants all of them fetched at once.
-  Triggers on: "scrape all these URLs", "fetch this list", "read all of these pages",
-  "get content from each of these", a list of 2+ URLs provided together.
-  Faster than scraping one-by-one. Requires local Watercrawl API at localhost:8000.
-allowed-tools:
-  - Bash(curl *)
-  - Bash(python3 *)
+description: Scrape multiple URLs concurrently and return all content. Use when asked to scrape multiple pages, fetch several URLs, or compare content from multiple sites.
+triggers:
+  - "batch scrape"
+  - "scrape multiple"
+  - "fetch these urls"
+  - "get content from all"
+  - "compare these pages"
 ---
 
 # watercrawl-batch
 
-## Prerequisites
+Scrape multiple URLs and return all content.
 
-Watercrawl API must be running. Start with `docker-compose up`.
+## Instructions
 
-## Workflow
+1. **Parse arguments** from `$ARGUMENTS`:
+   - `urls` — required. Newline- or comma-separated list of URLs. Maximum: 20.
+   - `format` — optional. `markdown` (default) or `text`.
 
-1. **Submit all URLs at once**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s -X POST "$BASE_URL/batch" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "urls": ["URL_1", "URL_2", "URL_3"],
-    "output_format": "markdown"
-  }' | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-for r in d['results']:
-    print(f'=== {r[\"url\"]} ===')
-    if r.get('error'):
-        print(f'ERROR: {r[\"error\"]}')
-    else:
-        print(r['content'][:800])
-    print()
-"
-```
+2. **If no URLs provided**, ask the user for a list of URLs.
 
-2. **Process results** — each result has `url`, `content`, and an optional `error` field if fetching failed.
+3. **Cap at 20 URLs** if more are provided.
 
-## Parameters
+4. **Fetch each URL** sequentially using WebFetch. Report progress: `Fetching URL N/total: <url>`
 
-- `urls` — list of URLs to scrape (no upper limit, but be mindful of the server's concurrency cap)
-- `output_format` — `markdown` (default), `text`, or `html`
+5. **Return all results**:
+   ```
+   ## Batch Scrape Results
+   **URLs requested:** N
+   **Successful:** X
+   **Failed:** Y
+
+   ---
+   ### 1. <url>
+   **Status:** OK | Failed (<reason>)
+   **Words:** ~N
+   <content>
+   ```

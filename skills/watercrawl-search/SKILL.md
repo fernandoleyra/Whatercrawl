@@ -1,47 +1,44 @@
 ---
-name: watercrawl-search
-description: |
-  Use when the user wants to search the web and get full page content — not just snippets.
-  Triggers on: "search for", "find articles about", "look up", "research",
-  "find recent news on", "what are people saying about", "find sources on".
-  Returns full-page markdown for each result — far richer than built-in WebSearch.
-  Requires local Watercrawl API at localhost:8000.
-allowed-tools:
-  - Bash(curl *)
-  - Bash(python3 *)
+description: Search the web and return full page content for each result. Use when asked to search the web, find information online, or research a topic.
+triggers:
+  - "search the web"
+  - "search for"
+  - "find online"
+  - "look up"
+  - "research"
 ---
 
 # watercrawl-search
 
-## Prerequisites
+Search the web and return full content for each result.
 
-Watercrawl API must be running. Start with `docker-compose up`.
+## Instructions
 
-## Workflow
+1. **Parse arguments** from `$ARGUMENTS`:
+   - `query` — required.
+   - `max_results` — optional. Default: 3. Maximum: 10.
+   - `engine` — optional. `google` (default) or `bing`.
 
-1. **Submit the search**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s -X POST "$BASE_URL/search" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "QUERY_HERE", "max_results": 5, "output_format": "markdown"}' \
-  | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-for r in d.get('results', []):
-    print(f'## {r[\"title\"]}')
-    print(f'URL: {r[\"url\"]}')
-    print(f'Snippet: {r[\"snippet\"]}')
-    print()
-    print(r['content'][:1000])
-    print('---')
-"
-```
+2. **Construct search URL**:
+   - Google: `https://www.google.com/search?q=<url-encoded-query>&num=<max_results>`
+   - Bing: `https://www.bing.com/search?q=<url-encoded-query>&count=<max_results>`
 
-2. **Synthesize the results** — read the full content from each result and answer the user's research question directly. Surface sources inline.
+3. **Fetch the search results page** using WebFetch.
 
-## Parameters
+4. **Extract result URLs** from the Markdown — find links that appear as numbered results. Filter out navigation links (settings, maps, images, etc.).
 
-- `query` — the search query string
-- `max_results` — number of pages to fetch and return (default 5, max 10)
-- `output_format` — `markdown` (default) or `text`
+5. **For each result URL** (up to max_results): fetch the full page using WebFetch and note its title.
+
+6. **Return**:
+   ```
+   ## Search Results: "<query>"
+   Found N pages.
+
+   ---
+   ### Result 1: <title>
+   **URL:** <url>
+   <content>
+   ```
+
+## Note
+Search engines may vary results by location and session. For repeatable results, search specific sites directly.
