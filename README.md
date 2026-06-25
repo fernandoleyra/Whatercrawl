@@ -239,7 +239,6 @@ Copy `.env.example` to `.env` and edit the values before starting the server.
 
 | Variable | Description | Default |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | **Required.** Anthropic API key used for Claude Vision extraction and structured JSON extraction | *(none)* |
 | `HOST` | Host address the server binds to | `0.0.0.0` |
 | `PORT` | Port the server listens on | `8000` |
 | `WATERCRAWL_DB_PATH` | Path to the SQLite database file for async crawl job state | `./data/watercrawl.db` |
