@@ -2,7 +2,7 @@
 
 ## 1. What Watercrawl Is
 
-Watercrawl is a production-grade web scraping API that converts any URL or entire website into clean, LLM-ready Markdown or structured JSON. It is a drop-in replacement for Firecrawl with better extraction quality via a vision-based fallback, self-healing CSS selectors, and lower cost when self-hosted. Runs fully locally with one Docker command — no external queue, no cloud dependency required.
+Watercrawl is a production-grade web scraping API that converts any URL or entire website into clean, LLM-ready Markdown or structured JSON. It is a drop-in replacement for Firecrawl with better extraction quality via a vision-based fallback and lower cost when self-hosted. Runs fully locally with one Docker command — no external queue, no cloud dependency required.
 
 ---
 
@@ -239,7 +239,7 @@ Copy `.env.example` to `.env` and edit the values before starting the server.
 
 | Variable | Description | Default |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | **Required.** Anthropic API key used for Claude Vision extraction and CSS selector self-healing | *(none)* |
+| `ANTHROPIC_API_KEY` | **Required.** Anthropic API key used for Claude Vision extraction and structured JSON extraction | *(none)* |
 | `HOST` | Host address the server binds to | `0.0.0.0` |
 | `PORT` | Port the server listens on | `8000` |
 | `WATERCRAWL_DB_PATH` | Path to the SQLite database file for async crawl job state | `./data/watercrawl.db` |
@@ -254,7 +254,7 @@ When running under Docker Compose, `MAX_CONCURRENT_CRAWLS`, `DEFAULT_TIMEOUT`, `
 
 ## 6. Architecture Overview
 
-The server is a FastAPI application that manages a single shared Playwright Chromium browser process; each incoming request receives its own isolated `BrowserContext` so cookies and storage never bleed across requests. Page content is extracted using trafilatura, which handles the common case of well-structured DOM content; when trafilatura returns low-confidence output, a Claude Vision fallback renders the page as an image and extracts text directly from the screenshot. Crawl jobs are queued and persisted in a local SQLite database via aiosqlite, giving the job store full async compatibility without requiring an external broker. Structured extraction and CSS selector self-healing both call the Claude API — extraction converts the scraped content into typed JSON matching the caller-supplied schema, while self-healing automatically rewrites broken selectors when a page layout changes. The Python SDK wraps the HTTP interface with a synchronous httpx client, keeping the caller's code free of any asyncio requirement.
+The server is a FastAPI application that manages a single shared Playwright Chromium browser process; each incoming request receives its own isolated `BrowserContext` so cookies and storage never bleed across requests. Page content is extracted using trafilatura, which handles the common case of well-structured DOM content; when trafilatura returns low-confidence output, a Claude Vision fallback renders the page as an image and extracts text directly from the screenshot. Crawl jobs are queued and persisted in a local SQLite database via aiosqlite, giving the job store full async compatibility without requiring an external broker. Structured extraction calls the Claude API to convert scraped content into typed JSON matching the caller-supplied schema. The Python SDK wraps the HTTP interface with a synchronous httpx client, keeping the caller's code free of any asyncio requirement.
 
 ---
 
