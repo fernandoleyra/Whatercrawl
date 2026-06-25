@@ -32,6 +32,11 @@ from src.api.models import (
     LinksResponse,
     MapRequest,
     MapResponse,
+    MonitorCheckRequest,
+    MonitorDiff,
+    MonitorRequest,
+    MonitorResponse,
+    MonitorSnapshotResponse,
     ScrapeRequest,
     ScrapeResponse,
     ScreenshotRequest,
@@ -41,6 +46,7 @@ from src.api.models import (
     SearchResult,
 )
 from src.crawler.engine import CrawlerEngine
+from src.extractor.differ import diff_content
 from src.extractor.links import extract_links
 from src.crawler.interactor import interact_and_scrape
 from src.crawler.mapper import map_site
@@ -354,4 +360,65 @@ async def links(req: LinksRequest, request: Request) -> LinksResponse:
         return LinksResponse(url=req.url, links=items, count=len(items))
     finally:
         semaphore.release()
+
+
+@app.post("/monitor/snapshot", response_model=MonitorSnapshotResponse)
+async def monitor_snapshot(req: MonitorRequest, request: Request) -> MonitorSnapshotResponse:
+    """Scrape a URL and store its content as a named snapshot."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    extractor: ContentExtractor = request.app.state.extractor
+    job_store: JobStore = request.app.state.job_store
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(req.url)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        content = extractor.extract_markdown(result["html"])
+    finally:
+        semaphore.release()
+
+    snapshot_id = await job_store.create_job("monitor", {"url": req.url})
+    await job_store.update_job(snapshot_id, status="done", result=[{"url": req.url, "content": content}])
+    return MonitorSnapshotResponse(snapshot_id=snapshot_id, url=req.url)
+
+
+@app.post("/monitor/check", response_model=MonitorResponse)
+async def monitor_check(req: MonitorCheckRequest, request: Request) -> MonitorResponse:
+    """Re-scrape the URL from a prior snapshot and return a content diff."""
+    import json
+
+    crawler: CrawlerEngine = request.app.state.crawler
+    extractor: ContentExtractor = request.app.state.extractor
+    job_store: JobStore = request.app.state.job_store
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    snapshot = await job_store.get_job(req.snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail=f"Snapshot '{req.snapshot_id}' not found.")
+
+    params = json.loads(snapshot["params"]) if isinstance(snapshot["params"], str) else snapshot["params"]
+    url = params.get("url", "")
+    old_content = (snapshot["result"] or [{}])[0].get("content", "")
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(url)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        new_content = extractor.extract_markdown(result["html"])
+    finally:
+        semaphore.release()
+
+    diff = diff_content(old_content, new_content)
+    new_snapshot_id = await job_store.create_job("monitor", {"url": url})
+    await job_store.update_job(new_snapshot_id, status="done", result=[{"url": url, "content": new_content}])
+
+    return MonitorResponse(
+        snapshot_id=req.snapshot_id,
+        url=url,
+        diff=MonitorDiff(**diff),
+        new_snapshot_id=new_snapshot_id,
+    )
 

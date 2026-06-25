@@ -141,3 +141,28 @@ class LinksResponse(BaseModel):
     links: list[LinkItem]
     count: int
 
+
+class MonitorRequest(BaseModel):
+    url: str
+
+
+class MonitorCheckRequest(BaseModel):
+    snapshot_id: str
+
+
+class MonitorDiff(BaseModel):
+    added: list[str]
+    removed: list[str]
+    changed: bool
+
+
+class MonitorSnapshotResponse(BaseModel):
+    snapshot_id: str
+    url: str
+
+class MonitorResponse(BaseModel):
+    snapshot_id: str
+    url: str
+    diff: MonitorDiff
+    new_snapshot_id: str
+
