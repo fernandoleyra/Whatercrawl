@@ -1,17 +1,27 @@
 """
-src/api/app.py — FastAPI application with lifespan and 3 endpoints.
+src/api/app.py — FastAPI application with lifespan and 12 endpoints.
 
 Endpoints:
-  POST /scrape        — Scrape a single URL and return extracted content.
-  POST /crawl         — Start a background site-crawl job.
-  GET  /crawl/{job_id} — Poll the status of a crawl job.
+  POST /scrape             — Scrape a single URL and return extracted content.
+  POST /crawl              — Start a background site-crawl job.
+  GET  /crawl/{job_id}     — Poll the status of a crawl job.
+  POST /search             — Search the web and return full-page content per result.
+  POST /map                — Discover all URLs on a domain via sitemap or link crawl.
+  POST /batch              — Scrape multiple URLs concurrently.
+  POST /screenshot         — Take a screenshot of a URL and return it as base64 PNG.
+  POST /interact           — Execute browser actions on a page and return resulting content.
+  POST /links              — Return all links with anchor text and context from a URL.
+  POST /monitor/snapshot   — Scrape a URL and store its content as a named snapshot.
+  POST /monitor/check      — Re-scrape a snapshotted URL and return a content diff.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncGenerator
@@ -299,7 +309,7 @@ async def screenshot(req: ScreenshotRequest, request: Request) -> ScreenshotResp
 
     await semaphore.acquire()
     try:
-        result = await crawler.crawl_url(req.url, take_screenshot=True)
+        result = await crawler.crawl_url(req.url, take_screenshot=True, full_page=req.full_page)
         if result["error"]:
             raise HTTPException(status_code=502, detail=result["error"])
         if not result["screenshot_b64"]:
@@ -307,8 +317,10 @@ async def screenshot(req: ScreenshotRequest, request: Request) -> ScreenshotResp
         return ScreenshotResponse(
             url=req.url,
             screenshot_b64=result["screenshot_b64"],
-            width=1280,
-            height=720,
+            # width and height are not surfaced by the Playwright engine; callers should
+            # decode the base64 PNG to determine actual dimensions.
+            width=0,
+            height=0,
         )
     finally:
         semaphore.release()
@@ -349,7 +361,6 @@ async def links(req: LinksRequest, request: Request) -> LinksResponse:
 
         all_links = extract_links(result["html"], req.url)
         if not req.include_external:
-            import urllib.parse
             origin = urllib.parse.urlparse(req.url)
             all_links = [
                 lnk for lnk in all_links
@@ -387,8 +398,6 @@ async def monitor_snapshot(req: MonitorRequest, request: Request) -> MonitorSnap
 @app.post("/monitor/check", response_model=MonitorResponse)
 async def monitor_check(req: MonitorCheckRequest, request: Request) -> MonitorResponse:
     """Re-scrape the URL from a prior snapshot and return a content diff."""
-    import json
-
     crawler: CrawlerEngine = request.app.state.crawler
     extractor: ContentExtractor = request.app.state.extractor
     job_store: JobStore = request.app.state.job_store

@@ -4,7 +4,8 @@ description: |
   Use when the user wants to extract specific structured fields from a URL.
   Triggers on: "extract the product details", "get the price and title from",
   "pull structured data", "scrape the fields", user provides explicit field names.
-  Sends a JSON schema to the Watercrawl API and returns validated structured output.
+  Scrapes the page via the local Watercrawl API, then extracts the requested
+  fields natively in this Claude Code session — no secondary API key needed.
   Requires local Watercrawl API at localhost:8000.
 allowed-tools:
   - Bash(curl *)
@@ -16,32 +17,25 @@ allowed-tools:
 ## Prerequisites
 
 Watercrawl API must be running. Start with `docker-compose up`.
-`ANTHROPIC_API_KEY` must be set in the service's `.env` — extraction uses Claude.
 
 ## Workflow
 
 1. **Identify the fields the user wants** — either stated explicitly or infer from context.
 
-2. **Build and submit the extraction request**
+2. **Scrape the URL to get page content**
 ```bash
 BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s -X POST "$BASE_URL/extract" \
+curl -s -X POST "$BASE_URL/scrape" \
   -H "Content-Type: application/json" \
-  -d '{
-    "url": "URL_HERE",
-    "schema": {
-      "type": "object",
-      "properties": {
-        "FIELD_1": {"type": "string"},
-        "FIELD_2": {"type": "number"}
-      },
-      "required": ["FIELD_1", "FIELD_2"]
-    }
-  }' | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('data',d), indent=2))"
+  -d '{"url": "URL_HERE", "output_format": "markdown"}' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('content','')) if 'content' in d else print('Error:', d.get('detail','unknown'))"
 ```
 
-3. **Surface the result** as a formatted table or JSON block per user preference.
+3. **Extract the structured data** — once you have the page content, extract the requested
+   fields directly from it and present the result as a JSON object or formatted table.
+   Do NOT call an external API to do this — you already have the content and the
+   intelligence to extract from it in this session.
 
-## Schema types
+## Output
 
-Supported field types in the schema: `string`, `number`, `boolean`, `array`, `object`.
+Present results as a formatted JSON block or table per user preference.
