@@ -1,49 +1,64 @@
 ---
-name: watercrawl-scrape
-description: |
-  Use when the user provides a URL and wants its content as Markdown, plain text, or HTML.
-  Triggers on: "scrape", "fetch this page", "get the content from", "grab the docs at",
-  "read this URL", "what does this page say". Handles JavaScript-rendered SPAs and pages
-  that WebFetch cannot load. Requires local Watercrawl API at localhost:8000.
-allowed-tools:
-  - Bash(curl *)
-  - Bash(python3 *)
+description: Scrape a single URL and return its content as clean Markdown, plain text, or raw HTML. Use when asked to fetch, scrape, read, or get the content of a webpage.
+triggers:
+  - "scrape"
+  - "fetch page"
+  - "get content of"
+  - "read this url"
+  - "extract content from"
 ---
 
 # watercrawl-scrape
 
-## Prerequisites
+Scrape a single URL and return clean content.
 
-Watercrawl API must be running locally. Start it with:
+## Instructions
+
+1. **Parse arguments** from `$ARGUMENTS`:
+   - `url` — required. The URL to scrape.
+   - `format` — optional. `markdown` (default), `text`, or `html`.
+
+2. **Fetch the page** using the WebFetch tool with the provided URL.
+
+3. **Process the response**:
+   - If `format=markdown` (default): return the content as-is from WebFetch (already Markdown). Clean up navigation artifacts: remove repeated navigation menus, cookie banners, and footer boilerplate visible as plain text blocks.
+   - If `format=text`: strip all Markdown formatting (headers, links, bold) and return plain text.
+   - If `format=html`: inform the user that raw HTML is not available via WebFetch; offer the Markdown version instead.
+
+4. **Check content quality**:
+   - If the returned content is fewer than 50 words, the page may be JavaScript-rendered. Inform the user: "This page may require JavaScript to render. If you have Playwright installed (`npm install -g playwright`), I can try a Bash-based approach to get the full content."
+   - If Playwright is available, offer to use it.
+
+5. **Return** the processed content with:
+   - Source URL: `**Source:** <url>`
+   - Word count: `**Words:** ~N`
+   - The content body
+
+## Playwright fallback (if requested)
+
+Check if Playwright is available:
 ```bash
-docker-compose up
+which playwright 2>/dev/null && echo "available" || npx playwright --version 2>/dev/null || echo "NOT_AVAILABLE"
 ```
-Default URL: `http://localhost:8000`. Override with env var `WATERCRAWL_URL`.
 
-## Workflow
-
-1. **Verify the API is reachable**
+If available, run:
 ```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s --max-time 3 "$BASE_URL/docs" | grep -q "Watercrawl" && echo "API up" || echo "API down — run: docker-compose up"
+node -e "
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  await page.goto('URL_HERE', { waitUntil: 'networkidle' });
+  const content = await page.content();
+  console.log(content);
+  await browser.close();
+})();
+" 2>/dev/null
 ```
-If the API is down, tell the user to start the service and stop here.
+Replace URL_HERE with the actual URL. Parse the returned HTML yourself.
 
-2. **Scrape the URL**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s -X POST "$BASE_URL/scrape" \
-  -H "Content-Type: application/json" \
-  -d "{\"url\": \"URL_HERE\", \"output_format\": \"markdown\"}" \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('content','')) if 'content' in d else print('Error:', d.get('detail','unknown'))"
-```
+## Error handling
 
-3. **Surface the result** directly in the conversation — do not truncate unless the user asks for a summary.
-
-## Output formats
-
-- `markdown` (default) — clean Markdown via trafilatura
-- `text` — plain text, no formatting
-- `html` — raw HTML
-
-To change format, replace `"markdown"` in the curl command above.
+- Network error: report the error and suggest checking the URL
+- 403/404/5xx: report the status and suggest verifying the URL
+- Timeout: inform the user and suggest retrying

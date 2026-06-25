@@ -1,60 +1,61 @@
 ---
-name: watercrawl-crawl
-description: |
-  Use when the user wants to crawl an entire site or multiple pages under a URL.
-  Triggers on: "crawl", "get all pages from", "extract everything under /docs",
-  "bulk scrape", "get all articles from", "scrape the whole site".
-  Starts a background job and polls until done. Requires local Watercrawl API.
-allowed-tools:
-  - Bash(curl *)
-  - Bash(python3 *)
-  - Bash(sleep *)
+description: Crawl an entire website by following links and returning all pages as Markdown. Use when asked to crawl a site, scrape all pages, or get all content from a domain.
+triggers:
+  - "crawl"
+  - "scrape all pages"
+  - "get all content from"
+  - "spider"
+  - "crawl the docs"
 ---
 
 # watercrawl-crawl
 
-## Prerequisites
+Crawl a website by following links from a starting URL.
 
-Watercrawl API must be running. Start with `docker-compose up`.
+## Instructions
 
-## Workflow
+1. **Parse arguments** from `$ARGUMENTS`:
+   - `url` — required. Starting URL.
+   - `max_pages` — optional. Max pages to crawl. Default: 10. Maximum: 50.
+   - `same_domain` — optional. `true` (default) to stay on the same domain.
+   - `depth` — optional. Max link depth. Default: 3.
 
-1. **Start the crawl job**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-JOB=$(curl -s -X POST "$BASE_URL/crawl" \
-  -H "Content-Type: application/json" \
-  -d "{\"url\": \"URL_HERE\", \"max_pages\": 50, \"max_depth\": 3}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('job_id',''))")
-echo "Job started: $JOB"
-```
+2. **Validate inputs**:
+   - If `max_pages > 50`, cap at 50 and inform the user.
+   - Extract the domain from the starting URL for domain filtering.
 
-2. **Poll until complete** (check every 5 seconds, timeout after 5 minutes)
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-for i in $(seq 1 60); do
-  STATUS=$(curl -s "$BASE_URL/crawl/$JOB" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['status'], len(d.get('pages',[])))")
-  echo "[$i/60] $STATUS"
-  echo "$STATUS" | grep -q "done" && break
-  sleep 5
-done
-```
+3. **Initialize crawl state**:
+   - `visited = []` — already-fetched URLs
+   - `queue = [starting_url]` — URLs to fetch next
+   - `results = []` — collected page data
 
-3. **Retrieve results**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s "$BASE_URL/crawl/$JOB" \
-  | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-for p in d.get('pages', []):
-    print(f'### {p[\"url\"]}')
-    print(p.get('content','')[:500])
-    print()
-"
-```
+4. **Crawl loop** (repeat until queue empty OR visited.length >= max_pages):
+   a. Take the next URL from the queue
+   b. Skip if already visited
+   c. Fetch using WebFetch
+   d. Add to visited and results: `{ url, title (first H1/H2), word_count, content }`
+   e. Extract links: find all `[text](url)` patterns in Markdown
+   f. Filter links: same domain only (if same_domain=true), skip anchors, mailto:, tel:
+   g. Add new links to queue
 
-## Parameters
+5. **Report progress**: `Crawling page N/max_pages: <url>`
 
-- `max_pages` — maximum pages to crawl (default 50)
-- `max_depth` — maximum link depth from seed URL (default 3)
+6. **Return summary**:
+   ```
+   ## Crawl Results: <domain>
+   **Pages crawled:** N
+   **Total words:** ~N
+
+   ### Pages found:
+   | # | URL | Title | Words |
+   |---|-----|-------|-------|
+
+   ---
+   ## Page Content
+   ### Page 1: <url>
+   <content>
+   ```
+
+## Limitations
+
+JavaScript-heavy SPAs may return sparse content via WebFetch. For SPAs, suggest the user install Playwright.

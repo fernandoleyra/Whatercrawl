@@ -1,41 +1,47 @@
 ---
-name: watercrawl-extract
-description: |
-  Use when the user wants to extract specific structured fields from a URL.
-  Triggers on: "extract the product details", "get the price and title from",
-  "pull structured data", "scrape the fields", user provides explicit field names.
-  Scrapes the page via the local Watercrawl API, then extracts the requested
-  fields natively in this Claude Code session — no secondary API key needed.
-  Requires local Watercrawl API at localhost:8000.
-allowed-tools:
-  - Bash(curl *)
-  - Bash(python3 *)
+description: Scrape a URL and extract structured data fields defined by the user. Use when asked to extract specific fields, get structured data, or parse specific information from a page.
+triggers:
+  - "extract"
+  - "get structured data"
+  - "parse fields from"
+  - "extract the price"
+  - "extract product info"
 ---
 
 # watercrawl-extract
 
-## Prerequisites
+Scrape a URL and extract structured JSON fields defined by the user.
 
-Watercrawl API must be running. Start with `docker-compose up`.
+## Instructions
 
-## Workflow
+1. **Parse arguments** from `$ARGUMENTS`:
+   - `url` — required.
+   - `schema` — the fields to extract. Can be:
+     - Inline JSON: `{ "title": "string", "price": "number" }`
+     - Natural language: `"title, price as a number, whether it's in stock"`
+     - Not provided: ask the user what fields they want
 
-1. **Identify the fields the user wants** — either stated explicitly or infer from context.
+2. **If schema not provided**, ask:
+   > "What fields would you like to extract? For example: `{ \"title\": \"string\", \"price\": \"number\", \"in_stock\": \"boolean\" }`"
 
-2. **Scrape the URL to get page content**
-```bash
-BASE_URL=${WATERCRAWL_URL:-http://localhost:8000}
-curl -s -X POST "$BASE_URL/scrape" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "URL_HERE", "output_format": "markdown"}' \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('content','')) if 'content' in d else print('Error:', d.get('detail','unknown'))"
-```
+3. **Fetch the page** using WebFetch.
 
-3. **Extract the structured data** — once you have the page content, extract the requested
-   fields directly from it and present the result as a JSON object or formatted table.
-   Do NOT call an external API to do this — you already have the content and the
-   intelligence to extract from it in this session.
+4. **Extract fields** using your intelligence:
+   - For each field in the schema, find the corresponding value in the content
+   - Type coercion: convert "$29.99" to `29.99` for `number` type
+   - For booleans: "In Stock" → `true`, "Out of Stock" → `false`
+   - If a field cannot be found, set it to `null`
 
-## Output
+5. **Return**:
+   ```json
+   {
+     "url": "...",
+     "data": {
+       "field1": "value1",
+       "field2": 42
+     },
+     "warnings": ["field3 not found in page content"]
+   }
+   ```
 
-Present results as a formatted JSON block or table per user preference.
+6. Append: "Extraction performed by reading the page content. For high-stakes use cases, verify values manually."
