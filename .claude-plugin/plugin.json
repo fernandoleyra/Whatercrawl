@@ -1,0 +1,48 @@
+{
+  "name": "watercrawl",
+  "version": "1.0.0",
+  "description": "Give Claude Code the ability to scrape pages, crawl entire sites, extract structured data, search the web, capture screenshots, and monitor for changes — using Claude's native WebFetch tool. No service, no API key, no Docker required.",
+  "author": {
+    "name": "Fernando Leyra",
+    "email": "fernando@family.agency"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/fernandoleyra/watercrawl",
+  "homepage": "https://github.com/fernandoleyra/watercrawl#readme",
+  "keywords": [
+    "web-scraping",
+    "crawling",
+    "extraction",
+    "websearch",
+    "playwright",
+    "markdown",
+    "firecrawl-alternative",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=1.0.0"
+  },
+  "skills": [
+    "skills/watercrawl-scrape",
+    "skills/watercrawl-crawl",
+    "skills/watercrawl-extract",
+    "skills/watercrawl-search",
+    "skills/watercrawl-map",
+    "skills/watercrawl-screenshot",
+    "skills/watercrawl-links",
+    "skills/watercrawl-batch",
+    "skills/watercrawl-monitor"
+  ],
+  "commands": [
+    "commands/watercrawl.md",
+    "commands/watercrawl-scrape.md",
+    "commands/watercrawl-crawl.md",
+    "commands/watercrawl-extract.md",
+    "commands/watercrawl-search.md",
+    "commands/watercrawl-map.md",
+    "commands/watercrawl-screenshot.md",
+    "commands/watercrawl-links.md",
+    "commands/watercrawl-batch.md",
+    "commands/watercrawl-monitor.md"
+  ]
+}

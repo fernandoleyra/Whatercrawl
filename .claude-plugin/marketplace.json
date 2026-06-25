@@ -1,0 +1,16 @@
+{
+  "name": "watercrawl",
+  "version": "1.0.0",
+  "description": "Watercrawl — web scraping and crawling plugin for Claude Code.",
+  "owner": {
+    "name": "Fernando Leyra",
+    "github": "fernandoleyra"
+  },
+  "plugins": [
+    {
+      "name": "watercrawl",
+      "description": "Scrape, crawl, extract, search, screenshot — using Claude Code's native tools. No service, no API key, no Docker.",
+      "source": "./"
+    }
+  ]
+}
