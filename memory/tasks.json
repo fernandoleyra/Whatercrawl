@@ -1,0 +1,355 @@
+{
+  "project": "firecrawl-clone",
+  "description": "Webcrawl — LLM-ready web scraping API with vision fallback and self-healing selectors",
+  "milestone_current": "M1",
+  "last_updated": "2026-03-24T00:00:00Z",
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Research Phase",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "T1",
+          "milestone": "M1",
+          "type": "research",
+          "agent": "researcher",
+          "status": "done",
+          "input": "Best async Python approach for combining Playwright browser automation with FastAPI. Confirm async Playwright works within FastAPI request lifecycle. Identify known pitfalls with event loops.",
+          "output": "memory/research/playwright_fastapi.md",
+          "acceptance": "Clear recommendation with working code snippet showing Playwright + FastAPI async integration. Gotchas listed."
+        },
+        {
+          "id": "T2",
+          "milestone": "M1",
+          "type": "research",
+          "agent": "researcher",
+          "status": "done",
+          "input": "Best approach for async job queue in Python without mandatory Redis. Must support: job creation, status polling, result storage. Evaluate: SQLite with WAL mode, aiosqlite, arq, dramatiq. Pick ONE and explain why.",
+          "output": "memory/research/job_queue.md",
+          "acceptance": "Single recommendation with schema design and working enqueue/dequeue example. SQLite WAL mode concurrency addressed."
+        },
+        {
+          "id": "T3",
+          "milestone": "M1",
+          "type": "research",
+          "agent": "researcher",
+          "status": "done",
+          "input": "Best Python library for extracting clean article/content text from raw HTML in 2025. Compare: trafilatura, readability-lxml, newspaper4k, justext. Must work well with crawled pages (not just articles). Output should support Markdown conversion.",
+          "output": "memory/research/content_extraction.md",
+          "acceptance": "Single library recommendation. Code example showing HTML → clean text → Markdown. Edge cases handled (empty pages, JS-only pages)."
+        },
+        {
+          "id": "T4",
+          "milestone": "M1",
+          "type": "research",
+          "agent": "researcher",
+          "status": "done",
+          "input": "How to call Claude API (claude-sonnet-4-20250514) with a base64 screenshot for vision-based content extraction. Include: how to take a full-page screenshot with Playwright, encode it, send to Claude Vision, and parse the Markdown response. API client: anthropic Python SDK.",
+          "output": "memory/research/claude_vision.md",
+          "acceptance": "Working end-to-end code example: Playwright screenshot → base64 → Claude API call → Markdown string returned. Error handling included."
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "name": "Core Crawler Engine",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "T5",
+          "milestone": "M2",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T1"],
+          "input": "Build the core crawler module. Read memory/research/playwright_fastapi.md first. File: src/crawler/engine.py. Must: launch async Playwright browser, navigate to URL, handle JS rendering, respect robots.txt, apply anti-bot delays (0.5–2s random) and rotate user agents from a list of 10 realistic agents, take full-page screenshot, return dict {url, html, screenshot_b64, status_code, error}. Max crawl depth configurable. Handles pagination by following 'next' links up to max_pages limit.",
+          "output": "src/crawler/engine.py",
+          "acceptance": "crawl_url(url) returns dict with html and screenshot_b64. Handles 404s (returns error key, no exception). Respects robots.txt (returns blocked=True for disallowed URLs). Tests pass."
+        },
+        {
+          "id": "T6",
+          "milestone": "M2",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T5"],
+          "input": "Write utility module src/crawler/utils.py: (1) robots_txt_allowed(url) — fetches and parses robots.txt, returns True/False for given URL. (2) get_random_user_agent() — returns random realistic user agent string from hardcoded list. (3) random_delay(min_s=0.5, max_s=2.0) — async sleep for random duration.",
+          "output": "src/crawler/utils.py",
+          "acceptance": "All three functions work. robots_txt_allowed handles missing robots.txt gracefully (returns True). Tests pass."
+        },
+        {
+          "id": "T7",
+          "milestone": "M2",
+          "type": "test",
+          "agent": "qa",
+          "status": "done",
+          "depends_on": ["T5", "T6"],
+          "input": "Write tests for src/crawler/engine.py and src/crawler/utils.py. Test: crawl_url with a real public URL (httpbin.org/html or example.com), 404 handling, robots.txt blocking, user agent rotation, screenshot capture produces non-empty base64 string.",
+          "output": "tests/test_crawler/test_engine.py",
+          "acceptance": "All tests pass. Coverage of happy path, 404, and robots.txt scenarios."
+        },
+        {
+          "id": "T8",
+          "milestone": "M2",
+          "type": "review",
+          "agent": "critic",
+          "status": "rejected",
+          "issue": "engine.py is 340 lines — exceeds 300-line limit. Fix: move _extract_links to utils.py, move crawl_site to site_crawler.py"
+        },
+        {
+          "id": "T8-fix",
+          "milestone": "M2",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T7"],
+          "input": "Review src/crawler/engine.py and src/crawler/utils.py. Check: async correctness, error handling completeness, no bare excepts, anti-bot approach is realistic, robots.txt parsing is correct per RFC.",
+          "output": "memory/critic_review.md",
+          "acceptance": "APPROVED or REJECTED with specific issues listed."
+        }
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "Content Extraction Pipeline",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "T9",
+          "milestone": "M3",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T3", "T4", "T8"],
+          "input": "Build content extractor. Read memory/research/content_extraction.md and memory/research/claude_vision.md. File: src/extractor/extractor.py. Class ContentExtractor with methods: (1) extract_markdown(html: str) → str — uses recommended library to extract clean text, convert to Markdown. (2) extract_text(html: str) → str — plain text only. (3) extract_raw(html: str) → str — returns cleaned HTML. (4) async vision_fallback(screenshot_b64: str) → str — calls Claude Vision API, returns Markdown. ContentExtractor should try DOM extraction first; if result is empty or < 100 chars, automatically use vision_fallback.",
+          "output": "src/extractor/extractor.py",
+          "acceptance": "extract_markdown on HN homepage returns non-empty Markdown with headlines. vision_fallback returns non-empty Markdown from a screenshot. Auto-fallback triggers when DOM extraction fails."
+        },
+        {
+          "id": "T10",
+          "milestone": "M3",
+          "type": "test",
+          "agent": "qa",
+          "status": "done",
+          "depends_on": ["T9"],
+          "input": "Write tests for src/extractor/extractor.py. Test: extract_markdown on sample HTML, extract_text on sample HTML, auto-fallback trigger (mock vision_fallback, pass HTML that would produce empty extraction), vision_fallback with mocked Claude API response.",
+          "output": "tests/test_extractor/test_extractor.py",
+          "acceptance": "All tests pass. Claude API calls are mocked. No live API calls in unit tests."
+        },
+        {
+          "id": "T11",
+          "milestone": "M3",
+          "type": "review",
+          "agent": "critic",
+          "status": "done",
+          "depends_on": ["T10"],
+          "input": "Review src/extractor/extractor.py. Check: fallback logic is safe (handles API errors), vision_fallback properly encodes base64, Claude API key read from environment (never hardcoded), error messages are informative.",
+          "output": "memory/critic_review.md",
+          "acceptance": "APPROVED or REJECTED with specific issues listed."
+        }
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "FastAPI Layer + Async Job Queue",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "T12",
+          "milestone": "M4",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T2", "T11"],
+          "input": "Build the job queue system. Read memory/research/job_queue.md. File: src/queue/job_store.py. Must: create/init SQLite DB with WAL mode, JobStore class with methods: create_job(type, params) → job_id (UUID), update_job(job_id, status, result=None, error=None), get_job(job_id) → dict, list_jobs(status=None) → list. Job statuses: pending, running, done, failed. Use aiosqlite for async.",
+          "output": "src/queue/job_store.py",
+          "acceptance": "create_job, update_job, get_job all work. SQLite file created at path from env var WEBCRAWL_DB_PATH (default: webcrawl.db). Tests pass."
+        },
+        {
+          "id": "T13",
+          "milestone": "M4",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T12"],
+          "input": "Build the FastAPI application. File: src/api/app.py. Implement endpoints: (1) POST /scrape — body: {url: str, output_format: 'markdown'|'text'|'html' = 'markdown'} — crawls URL, extracts content, returns {url, content, format, crawled_at}. (2) POST /crawl — body: {url: str, max_pages: int = 50, max_depth: int = 3, output_format: str = 'markdown'} — creates job, starts background task, returns {job_id, status: 'pending'}. (3) GET /crawl/{job_id} — returns job status + results array of {url, content}. (4) POST /extract — body: {url: str, schema: dict} — crawls URL, calls structured extractor (placeholder for M5), returns {url, data: dict}. Include Pydantic models for all request/response bodies. Use BackgroundTasks for async crawling.",
+          "output": "src/api/app.py",
+          "acceptance": "FastAPI app starts (uvicorn src.api.app:app). All 4 endpoints return correct Pydantic response shapes. /docs endpoint shows all routes. Tests pass."
+        },
+        {
+          "id": "T14",
+          "milestone": "M4",
+          "type": "test",
+          "agent": "qa",
+          "status": "done",
+          "depends_on": ["T13"],
+          "input": "Write tests for all FastAPI endpoints using httpx AsyncClient + pytest-asyncio. Test: POST /scrape with mocked crawler+extractor returns correct shape, POST /crawl returns job_id, GET /crawl/{job_id} returns status, POST /extract returns data dict. Use pytest fixtures for app client. Mock external calls.",
+          "output": "tests/test_api/test_endpoints.py",
+          "acceptance": "All 4 endpoints tested. Status codes correct. Response shapes validated. No live network calls."
+        },
+        {
+          "id": "T15",
+          "milestone": "M4",
+          "type": "review",
+          "agent": "critic",
+          "status": "done",
+          "depends_on": ["T14"],
+          "input": "Review src/api/app.py and src/queue/job_store.py. Check: Pydantic models complete and typed, background task doesn't leak errors silently, SQLite WAL enabled, no blocking calls in async context, error responses follow RFC 7807 (problem detail format).",
+          "output": "memory/critic_review.md",
+          "acceptance": "APPROVED or REJECTED with specific issues listed."
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Structured Extraction + Self-Healing",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "T16",
+          "milestone": "M5",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T15"],
+          "input": "Build structured extractor. File: src/extractor/structured.py. Class StructuredExtractor with method: async extract(html: str, schema: dict) → dict. Must: send HTML + schema to Claude API (claude-sonnet-4-20250514), prompt instructs Claude to extract fields matching the schema and return valid JSON. Validate output against schema using jsonschema library. If validation fails, retry once with error feedback in prompt. Return validated dict or raise ExtractionError.",
+          "output": "src/extractor/structured.py",
+          "acceptance": "Given HTML of a product page and schema {title: string, price: number}, returns dict with correct types. Validation errors trigger retry. Tests pass."
+        },
+        {
+          "id": "T17",
+          "milestone": "M5",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T16"],
+          "input": "Build self-healing selector system. File: src/crawler/selector_healer.py. Class SelectorHealer with: (1) extract_with_selector(html: str, css_selector: str) → str — extracts content using BeautifulSoup CSS selector. (2) async heal_selector(html: str, broken_selector: str, description: str) → str — calls Claude API to re-derive a working CSS selector from page semantics given the broken one and a description of what it was targeting. (3) log_selector_change(original: str, healed: str, url: str) — appends to selector_audit.log. SelectorHealer.extract_with_selector should catch selector failures and automatically call heal_selector, log the change, then retry.",
+          "output": "src/crawler/selector_healer.py",
+          "acceptance": "extract_with_selector with a broken selector triggers heal_selector and logs to selector_audit.log. Tests pass with mocked Claude responses."
+        },
+        {
+          "id": "T18",
+          "milestone": "M5",
+          "type": "test",
+          "agent": "qa",
+          "status": "done",
+          "depends_on": ["T16", "T17"],
+          "input": "Write tests for src/extractor/structured.py and src/crawler/selector_healer.py. Test: structured extraction with mocked Claude response, schema validation pass and fail+retry, selector healing with mocked Claude response, audit log written correctly.",
+          "output": "tests/test_extractor/test_structured.py",
+          "acceptance": "All tests pass. Claude API mocked throughout. Retry logic verified. Audit log file created in tests temp dir."
+        },
+        {
+          "id": "T19",
+          "milestone": "M5",
+          "type": "review",
+          "agent": "critic",
+          "status": "done",
+          "depends_on": ["T18"],
+          "input": "Review src/extractor/structured.py and src/crawler/selector_healer.py. Check: retry logic is bounded (max 2 attempts), Claude prompts are clear and include schema in JSON, audit log uses append mode, no sensitive data logged, ExtractionError message is informative.",
+          "output": "memory/critic_review.md",
+          "acceptance": "APPROVED or REJECTED with specific issues listed."
+        }
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "Python SDK",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "T20",
+          "milestone": "M6",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T19"],
+          "input": "Build the Python SDK. File: sdk/webcrawl/__init__.py and sdk/webcrawl/client.py. Class WebcrawlClient(base_url: str = 'http://localhost:8000'). Methods: (1) scrape(url: str, output_format: str = 'markdown') → str. (2) crawl(url: str, max_pages: int = 50) → str (job_id). (3) get_crawl_status(job_id: str) → dict {status, pages: list}. (4) extract(url: str, schema: dict) → dict. Also create: sdk/setup.py with package name webcrawl, version 0.1.0. The SDK mirrors the Firecrawl SDK interface.",
+          "output": "sdk/webcrawl/client.py",
+          "acceptance": "pip install -e sdk/ works. WebcrawlClient instantiates. All 4 methods make correct HTTP calls to the API (verified with httpretty or responses mock). Tests pass."
+        },
+        {
+          "id": "T21",
+          "milestone": "M6",
+          "type": "test",
+          "agent": "qa",
+          "status": "done",
+          "depends_on": ["T20"],
+          "input": "Write tests for sdk/webcrawl/client.py. Use responses library to mock HTTP. Test all 4 methods: correct HTTP method and URL, correct request body, correct response parsing, error response raises WebcrawlError.",
+          "output": "tests/test_sdk/test_client.py",
+          "acceptance": "All tests pass. HTTP calls mocked. No live server required."
+        },
+        {
+          "id": "T22",
+          "milestone": "M6",
+          "type": "review",
+          "agent": "critic",
+          "status": "rejected",
+          "issue": "Missing noqa comment on broad except in _raise_for_status — fixed inline"
+        },
+        {
+          "id": "T22-retry",
+          "milestone": "M6",
+          "type": "review",
+          "agent": "critic",
+          "status": "in_progress",
+          "depends_on": ["T21"],
+          "input": "Review sdk/webcrawl/client.py and sdk/setup.py. Check: setup.py has correct install_requires, client uses httpx (not requests, for async compatibility), error handling is user-friendly, method signatures match documented Firecrawl SDK interface.",
+          "output": "memory/critic_review.md",
+          "acceptance": "APPROVED or REJECTED with specific issues listed."
+        }
+      ]
+    },
+    {
+      "id": "M7",
+      "name": "Docker + README + Final QA",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "T23",
+          "milestone": "M7",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T22"],
+          "input": "Create Dockerfile for the Webcrawl API. Requirements: multi-stage build (builder + runtime), installs Playwright browsers in runtime stage, uses non-root user, exposes port 8000, CMD runs uvicorn. Also create docker-compose.yml with: webcrawl service (builds from .), optional redis service (profile: redis), environment variables: ANTHROPIC_API_KEY, WEBCRAWL_DB_PATH. Create .env.example with all required variables.",
+          "output": "Dockerfile",
+          "acceptance": "docker build . succeeds. docker-compose up starts the API. Container runs as non-root. .env.example documents all required env vars."
+        },
+        {
+          "id": "T24",
+          "milestone": "M7",
+          "type": "code",
+          "agent": "developer",
+          "status": "done",
+          "depends_on": ["T23"],
+          "input": "Write README.md for the project root. Must include: (1) What Webcrawl is (2-3 sentences). (2) Quick Start: Docker and local dev. (3) API Reference for all 4 endpoints with curl examples. (4) Python SDK usage examples for all 4 methods. (5) Configuration: all env variables with descriptions and defaults. (6) Architecture overview (one paragraph). (7) Contributing section.",
+          "output": "README.md",
+          "acceptance": "README has all 7 sections. curl examples are syntactically correct. SDK examples match actual method signatures."
+        },
+        {
+          "id": "T25",
+          "milestone": "M7",
+          "type": "test",
+          "agent": "qa",
+          "status": "done",
+          "depends_on": ["T24"],
+          "input": "Write end-to-end integration test. File: tests/test_integration/test_e2e.py. Test the full flow: start the FastAPI app in-process, POST /scrape with example.com, POST /crawl with example.com + max_pages=1, poll GET /crawl/{id} until done, POST /extract with simple schema. All crawler and Claude API calls mocked. Verify response shapes end-to-end.",
+          "output": "tests/test_integration/test_e2e.py",
+          "acceptance": "Full end-to-end flow passes. All external calls mocked. Response shapes validated at each step."
+        },
+        {
+          "id": "T26",
+          "milestone": "M7",
+          "type": "review",
+          "agent": "critic",
+          "status": "done",
+          "depends_on": ["T25"],
+          "input": "Final review of the complete project. Check: (1) README Quick Start is accurate and matches actual code. (2) .env.example is complete. (3) Dockerfile best practices (non-root, multi-stage, .dockerignore present). (4) No secrets anywhere in source code. (5) requirements.txt is complete and pinned. (6) All src/ modules have docstrings. Overall verdict: APPROVED (project complete) or REJECTED (list blockers).",
+          "output": "memory/critic_review.md",
+          "acceptance": "APPROVED — project ready for use."
+        }
+      ]
+    }
+  ]
+}
