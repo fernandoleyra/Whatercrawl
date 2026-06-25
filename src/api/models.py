@@ -97,3 +97,18 @@ class InteractResponse(BaseModel):
     content: str
     format: str
 
+
+class BatchRequest(BaseModel):
+    urls: list[str]
+    output_format: Literal["markdown", "text", "html"] = "markdown"
+
+
+class BatchResult(BaseModel):
+    url: str
+    content: str
+    error: str | None = None
+
+
+class BatchResponse(BaseModel):
+    results: list[BatchResult]
+

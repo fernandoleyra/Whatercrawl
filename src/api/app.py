@@ -19,6 +19,9 @@ from typing import AsyncGenerator
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 
 from src.api.models import (
+    BatchRequest,
+    BatchResponse,
+    BatchResult,
     CrawlJobResponse,
     CrawlRequest,
     CrawlStatusResponse,
@@ -244,6 +247,36 @@ async def map_urls(req: MapRequest, request: Request) -> MapResponse:
         return MapResponse(url=req.url, urls=urls, count=len(urls))
     finally:
         semaphore.release()
+
+
+@app.post("/batch", response_model=BatchResponse)
+async def batch_scrape(req: BatchRequest, request: Request) -> BatchResponse:
+    """Scrape multiple URLs concurrently and return all results."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    extractor: ContentExtractor = request.app.state.extractor
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    if not req.urls:
+        return BatchResponse(results=[])
+
+    async def _scrape_one(url: str) -> BatchResult:
+        await semaphore.acquire()
+        try:
+            result = await crawler.crawl_url(url)
+            if result["error"]:
+                return BatchResult(url=url, content="", error=result["error"])
+            if req.output_format == "text":
+                content = extractor.extract_text(result["html"])
+            elif req.output_format == "html":
+                content = extractor.extract_raw(result["html"])
+            else:
+                content = extractor.extract_markdown(result["html"])
+            return BatchResult(url=url, content=content)
+        finally:
+            semaphore.release()
+
+    results = await asyncio.gather(*[_scrape_one(url) for url in req.urls])
+    return BatchResponse(results=list(results))
 
 
 @app.post("/interact", response_model=InteractResponse)
