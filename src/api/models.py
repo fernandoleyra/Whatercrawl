@@ -112,3 +112,15 @@ class BatchResult(BaseModel):
 class BatchResponse(BaseModel):
     results: list[BatchResult]
 
+
+class ScreenshotRequest(BaseModel):
+    url: str
+    full_page: bool = True
+
+
+class ScreenshotResponse(BaseModel):
+    url: str
+    screenshot_b64: str
+    width: int
+    height: int
+

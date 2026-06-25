@@ -31,6 +31,8 @@ from src.api.models import (
     MapResponse,
     ScrapeRequest,
     ScrapeResponse,
+    ScreenshotRequest,
+    ScreenshotResponse,
     SearchRequest,
     SearchResponse,
     SearchResult,
@@ -277,6 +279,29 @@ async def batch_scrape(req: BatchRequest, request: Request) -> BatchResponse:
 
     results = await asyncio.gather(*[_scrape_one(url) for url in req.urls])
     return BatchResponse(results=list(results))
+
+
+@app.post("/screenshot", response_model=ScreenshotResponse)
+async def screenshot(req: ScreenshotRequest, request: Request) -> ScreenshotResponse:
+    """Navigate to a URL, take a screenshot, and return it as base64 PNG."""
+    crawler: CrawlerEngine = request.app.state.crawler
+    semaphore: asyncio.Semaphore = request.app.state.semaphore
+
+    await semaphore.acquire()
+    try:
+        result = await crawler.crawl_url(req.url, take_screenshot=True)
+        if result["error"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        if not result["screenshot_b64"]:
+            raise HTTPException(status_code=500, detail="Screenshot capture failed")
+        return ScreenshotResponse(
+            url=req.url,
+            screenshot_b64=result["screenshot_b64"],
+            width=1280,
+            height=720,
+        )
+    finally:
+        semaphore.release()
 
 
 @app.post("/interact", response_model=InteractResponse)
